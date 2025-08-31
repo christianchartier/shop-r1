@@ -41,6 +41,7 @@ venv/
 env/
 ENV/
 .venv/
+shop-R1/shop_r1_env/.venv/
 
 # IDE
 .vscode/

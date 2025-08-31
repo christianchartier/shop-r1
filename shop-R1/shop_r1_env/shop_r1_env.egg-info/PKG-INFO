@@ -1,0 +1,248 @@
+Metadata-Version: 2.4
+Name: shop-r1-env
+Version: 0.1.0
+Summary: Simplified Shop‑R1 environment for Verifiers and Prime Environments Hub
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: verifiers
+Requires-Dist: requests>=2.31
+Requires-Dist: datasets>=2.19.0
+
+# Shop‑R1 Environment
+
+This package contains a **simplified** implementation of the Shop‑R1
+reinforcement learning environment described in the paper
+*Shop‑R1: Rewarding LLMs to Simulate Human Behavior in Online Shopping via
+Reinforcement Learning*.  The environment is built using the
+[Verifiers](https://github.com/willccbb/verifiers) library and is
+structured for deployment on the Prime Environments Hub.
+
+## Overview
+
+Shop‑R1 decomposes human shopping behaviour into two sub‑tasks: **rationale
+generation** and **action prediction**.  At each step the agent
+observes a simplified HTML context, thinks about what to do next, and
+outputs a JSON object with two keys:
+
+```json
+{
+  "rationale": "…",
+  "action": {
+    "type": "click" | "type_and_submit" | "terminate",
+    "name": "…",  // optional attribute (e.g., button name)
+    "text": "…"   // optional long‑text (e.g., search query; only for type_and_submit)
+  }
+}
+```
+
+The environment follows the Shop‑R1 reward design: format correctness (+0.5),
+self‑certainty of the rationale (+0.13), action type accuracy (+0.3), sub‑action
+attribute presence (+0.2 for click; +0.1/+0.1 for type_and_submit name/text), and
+similarity rewards with thresholded ROUGE‑L and difficulty‑aware scaling (DARS)【239087673610332†L170-L177】【239087673610332†L431-L437】.  See
+`environments/shop_r1/shop_r1.py` for the concrete implementation.
+
+## Files
+
+```
+shop_r1_env/
+├── environments/
+│   └── shop_r1/
+│       └── shop_r1.py   # Environment implementation
+├── pyproject.toml       # Package metadata for installation
+└── README.md            # This document
+```
+
+### `shop_r1.py`
+
+Defines a `JSONActionParser` to extract the rationale and action from
+model completions and computes several verifiable rewards.  A
+placeholder dataset (`EXAMPLES`) demonstrates the required format; in
+practice you should replace this with your own extracted context/action
+pairs from shopping logs【239087673610332†L318-L343】.  The `load_environment` function
+returns a `vf.SingleTurnEnv` with an appropriate rubric for RL.
+
+### `pyproject.toml`
+
+Declares the package metadata and a dependency on `verifiers`.  After
+installing this package into your Python environment you can call
+`vf-install shop-r1` and `vf-eval shop-r1` to evaluate models.
+
+## Usage
+
+1. **Create and activate a virtual env:**
+
+   ```bash
+   cd shop-R1/shop_r1_env
+   if command -v uv >/dev/null 2>&1; then uv venv .venv; else python3 -m venv .venv; fi
+   source .venv/bin/activate
+   ```
+
+2. **Install dependencies:** ensure you have a recent Python (≥3.8).  We
+   recommend using [uv](https://github.com/astral-sh/uv) as your
+   package manager.  You can install the `verifiers` library with:
+
+   ```bash
+   # install uv if you haven't already
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   # add the verifiers package (installs all extras by default)
+   uv pip install verifiers[all]
+   ```
+
+3. **Install the environment locally:** use `uv` in place of `pip` to
+   install the package in editable mode, then register the environment
+   by its name (`shop-r1`) with verifiers:
+
+   ```bash
+   uv pip install -e .
+    # register the environment (name maps hyphen ↔ underscore)
+   vf-install shop-r1
+   ```
+
+4. **Evaluate a model (built-in examples):**
+
+   ```bash
+   vf-eval shop-r1 -m gpt-4.1-mini -n 3 -r 2
+   ```
+
+5. **Generate a synthetic dataset (JSONL) and point the env to it:**
+
+   ```bash
+   shop-r1-synth -o data/synth.jsonl -n 1000 --seed 7
+   export SHOP_R1_DATASET=$PWD/data/synth.jsonl
+   vf-eval shop-r1 -m gpt-4.1-mini -n 10 -r 2
+   ```
+
+### vLLM + Qwen (with logprobs for self‑certainty)
+
+To activate the self‑certainty reward, your inference backend must return token logprobs.
+
+1) Launch vLLM’s OpenAI server with Qwen:
+
+```bash
+# On a GPU machine/pod
+pip install vllm
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --host 0.0.0.0 --port 8000 \
+  --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90
+
+export OPENAI_API_KEY=EMPTY
+export OPENAI_BASE_URL=http://localhost:8000/v1
+export OPENAI_API_BASE=$OPENAI_BASE_URL  # some clients use this name
+```
+
+2) Verify logprobs work via curl:
+
+```bash
+curl -s $OPENAI_BASE_URL/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-3B-Instruct",
+    "logprobs": 5, "top_logprobs": 5,
+    "messages": [{"role":"user","content":"Say hi"}]
+  }' | jq .choices[0].logprobs
+```
+
+3) Run `vf-eval` against the OpenAI endpoint and request logprobs.
+
+Depending on your `verifiers` version, pass request extras either via a CLI flag
+or environment variable. Check `vf-eval -h` for the supported option names.
+
+Examples (adjust to your CLI):
+
+```bash
+# Pattern A: pass extras JSON directly
+vf-eval shop-r1 \
+  -m openai \
+  --model-id Qwen/Qwen2.5-3B-Instruct \
+  --base-url $OPENAI_BASE_URL \
+  --extra '{"logprobs":5,"top_logprobs":5,"temperature":0.6}' \
+  -n 10 -r 2
+
+# Pattern B: set an env var consumed by your provider wrapper
+export VERIFIERS_OPENAI_EXTRA='{"logprobs":5,"top_logprobs":5,"temperature":0.6}'
+vf-eval shop-r1 -m openai --model-id Qwen/Qwen2.5-3B-Instruct -n 10 -r 2
+```
+
+If the extras are plumbed, the self‑certainty term in the environment will be active.
+
+What is the "extras" flag?
+
+- Purpose: pass provider‑specific request options that aren’t modeled as first‑class CLI flags. Here you use it to ask the provider to return token logprobs.
+- Shape: JSON string. Common keys for OpenAI‑compatible endpoints: `logprobs`, `top_logprobs`, `temperature`, `max_tokens`, etc.
+- Where to find it: run `vf-eval -h` and look for an option named `--extra`, `--provider-extra`, or a provider‑scoped variant like `--openai.extra`. Some versions also read an env var (e.g., `VERIFIERS_OPENAI_EXTRA`). Use whichever your `vf-eval` supports.
+- How it flows: vf‑eval merges the JSON into the underlying API request payload. The provider returns token logprobs; verifiers attaches them to `completion_info` and the environment’s self‑certainty reward uses them.
+
+### Generate SFT‑style rationales via API
+
+You can synthesize rationales with any OpenAI‑compatible endpoint (including vLLM):
+
+```bash
+# Using the running vLLM server above
+shop-r1-synth -o data/synth_with_rationales.jsonl -n 1000 \
+  --rationales \
+  --rationales-base-url $OPENAI_BASE_URL \
+  --rationales-model Qwen/Qwen2.5-3B-Instruct \
+  --rationales-key-env OPENAI_API_KEY \
+  --rationales-temp 0.2
+```
+
+Each JSONL row will include a `rationale` field alongside `prompt` and `answer`.
+
+6. **Publish to the hub:** follow the instructions in the Prime
+   Environments Hub setup guide to run `prime env init` and
+   `prime env push` from the project root.  Once pushed, others can
+   install your environment with:
+
+   ```bash
+   uv tool install prime
+   prime login
+   prime env init
+   prime env push
+   prime env info <you>/shop-r1
+   prime env install <you>/shop-r1
+   ```
+
+7. **Train with Prime RL:** add a section like the following to your
+   orchestrator TOML:
+
+   ```toml
+   [environment]
+   id = "<you>/shop-r1"
+
+   # Optional: pass environment kwargs
+   [environment.kwargs]
+   # Paper-aligned defaults
+   w_format = 0.5
+   w_rationale = 0.13
+   w_type = 0.3
+   sim_threshold = 0.75
+   enable_dars = true
+   dars_factor = 1000
+   ```
+
+   Ensure the environment is installed on the training machine (`prime env install <you>/shop-r1`). If using a custom dataset, set `SHOP_R1_DATASET=/path/to/your.jsonl`. Then run `uv run rl` with your trainer/inference/orchestrator configs.
+
+Additionally, configure your inference to return token logprobs so the self‑certainty
+reward is active. For OpenAI-compatible providers, pass `{"logprobs":5,"top_logprobs":5}`
+in the inference section (key names vary by launcher; consult your Prime RL config schema).
+
+## Extending the Environment
+
+This implementation is intentionally minimal.  To more faithfully
+replicate the Shop‑R1 setup you should:
+
+* Populate `EXAMPLES` with real shopping contexts and actions.  The
+  paper describes a proprietary corpus of 52K sessions where each
+  recorded action has a rationale generated by Claude 3.5【239087673610332†L513-L531】.
+* Replace the heuristic rationale reward with a self‑certainty signal
+  computed from token‑level probabilities (KL divergence) as described
+  in Eq. (3)【239087673610332†L170-L177】.
+* Implement the difficulty‑aware reward scaling (DARS) and adjust
+  the weights in the rubric accordingly【239087673610332†L431-L437】.
+* Use `MultiTurnEnv` if you wish to simulate full sessions rather
+  than individual steps; override `is_completed` and
+  `env_response` accordingly.
+
+Refer to the Shop‑R1 paper and the Verifiers documentation for
+additional guidance on dataset preparation and reward design.

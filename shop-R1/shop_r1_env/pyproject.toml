@@ -1,0 +1,21 @@
+[project]
+name = "shop-r1-env"
+version = "0.1.0"
+description = "Simplified Shop‑R1 environment for Verifiers and Prime Environments Hub"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "verifiers",
+    "requests>=2.31",
+    "datasets>=2.19.0",
+]
+
+[tool.setuptools]
+packages = ["environments", "environments.shop_r1"]
+
+[project.scripts]
+shop-r1-synth = "environments.shop_r1.synthesize:main"
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"

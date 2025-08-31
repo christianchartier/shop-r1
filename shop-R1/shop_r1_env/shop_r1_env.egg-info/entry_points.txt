@@ -1,0 +1,2 @@
+[console_scripts]
+shop-r1-synth = environments.shop_r1.synthesize:main

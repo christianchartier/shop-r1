@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+environments/__init__.py
+environments/shop_r1/__init__.py
+environments/shop_r1/shop_r1.py
+environments/shop_r1/synthesize.py
+shop_r1_env.egg-info/PKG-INFO
+shop_r1_env.egg-info/SOURCES.txt
+shop_r1_env.egg-info/dependency_links.txt
+shop_r1_env.egg-info/entry_points.txt
+shop_r1_env.egg-info/requires.txt
+shop_r1_env.egg-info/top_level.txt

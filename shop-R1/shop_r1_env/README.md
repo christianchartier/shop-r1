@@ -291,6 +291,39 @@ This is the exact flow we used to stand up Qwen via vLLM and activate the self�
 - This environment includes a small normalization layer to map common variants (e.g., `next_action.target → name`, `value → text`, CSS `#id → id`) into the canonical `{type,name,text}` for development ergonomics.
 - For “paper‑strict” ablations, keep prompts strict so the model emits the exact schema; normalization does not alter correctly‑formed outputs.
 
+## Easy Reboot (what worked reliably)
+
+Once your SSH public key is saved in the web UI, you do NOT need to re‑provide it on each reboot. The following is the fastest flow we used:
+
+- Terminal C (remote; after the instance shows an SSH line in the UI)
+  - Click the SSH connection in the UI. Example shown:
+    - `ssh root@<IP> -p <PORT>`
+  - First connect (accept host key):
+    - `ssh -o StrictHostKeyChecking=accept-new -p <PORT> root@<IP>`
+  - Prepare vLLM and start the server (keep running):
+    - `pip install --upgrade pip`
+    - `pip install vllm`
+    - (optional) `apt-get update && apt-get install -y tmux && tmux new -s vllm`
+    - `python -m vllm.entrypoints.openai.api_server \
+        --model Qwen/Qwen2.5-3B-Instruct \
+        --host 0.0.0.0 --port 8000 \
+        --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90`
+
+- Terminal B (local Mac; keep open)
+  - Forward port 8000 to your Mac (verbose helps if there’s an error):
+    - `ssh -p <PORT> -N -L 8000:localhost:8000 root@<IP> -v`
+
+- Terminal A (local Mac, venv active in this repo)
+  - Point verifiers to the local forward and run eval with logprobs + self‑certainty:
+    - `export OPENAI_API_KEY=EMPTY`
+    - `export OPENAI_BASE_URL=http://localhost:8000/v1`
+    - `PYTHONPATH="$PWD:$PWD/environments" vf-eval environments.shop_r1 -m "Qwen/Qwen2.5-3B-Instruct" -b "$OPENAI_BASE_URL" -k OPENAI_API_KEY -S '{"logprobs":true,"top_logprobs":5,"temperature":0.2,"response_format":{"type":"json_object"}}' -a '{"w_self_certainty":0.13}' -n 2 -r 1`
+
+Notes
+- If the UI shows a different SSH user (e.g., `ubuntu@`), use that exact user.
+- If you reused an IP and see a host‑key warning, remove the old key: `ssh-keygen -R '[<IP>]:<PORT>'` and reconnect.
+
+
 ## TODOs (Paper‑complete implementation)
 
 Use this checklist to complete a paper‑faithful implementation and reproductions.

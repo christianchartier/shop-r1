@@ -1,3 +1,0 @@
-verifiers
-requests>=2.31
-datasets>=2.19.0

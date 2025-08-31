@@ -94,6 +94,100 @@ installing this package into your Python environment you can call
    vf-eval shop-r1 -m gpt-4.1-mini -n 3 -r 2
    ```
 
+## Strict Mode (Paper‑Faithful)
+
+Strict mode enforces the exact output schema used in the paper and disables all normalization. Under strict mode, completions must be a single JSON object — no prose, no code fences — with:
+
+- Top‑level keys exactly: {"rationale", "action"}
+- Action keys exactly: {"type", "name", "text"}
+- Allowed types: click, type_and_submit, terminate
+- Semantics:
+  - terminate → name == "" and text == ""
+  - click → name != "" and text == ""
+  - type_and_submit → name != "" and text != ""
+
+Enable strict mode and set the value similarity threshold via env args:
+
+```bash
+vf-eval shop-r1 \
+  -m gpt-4.1-mini \
+  -a '{"strict": true, "sim_threshold": 0.75}'
+```
+
+In strict mode, any deviation (extra keys, missing keys, wrong types, wrong empty/non‑empty values, code fences) yields 0 reward.
+
+### Getting Non‑Zero Rewards Under Strict
+
+Models adhere best when you use structured outputs:
+
+1) OpenAI structured outputs (json_schema)
+
+OpenAI’s `response_format.json_schema` enforces shape and types. Recent API versions disallow `oneOf` within nested properties; keep semantics enforced by the environment’s strict checks and use the schema only for shape.
+
+```bash
+vf-eval shop-r1 \
+  -m gpt-4o-mini -b https://api.openai.com/v1 -k OPENAI_API_KEY \
+  -n 2 -r 1 \
+  -S '{"temperature":0,"max_tokens":160,"response_format":{"type":"json_schema","json_schema":{"name":"ShopR1Strict","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["rationale","action"],"properties":{"rationale":{"type":"string"},"action":{"type":"object","additionalProperties":false,"required":["type","name","text"],"properties":{"type":{"type":"string","enum":["click","type_and_submit","terminate"]},"name":{"type":"string"},"text":{"type":"string"}}}}}}}' \
+  -a '{"strict": true, "system_prompt": "Output only a single JSON object with exactly two top-level keys: rationale (string) and action (object with keys type, name, text). Allowed types: click, type_and_submit, terminate. Type rules: terminate → name=\"\" and text=\"\"; click → name!=\"\" and text=\"\"; type_and_submit → name!=\"\" and text!=\"\". No markdown, no extra keys, no commentary."}'
+```
+
+2) vLLM or other OpenAI‑compatible servers (json_object)
+
+If `json_schema` isn’t supported, use `json_object` plus a strong system prompt and temperature 0.
+
+```bash
+vf-eval shop-r1 \
+  -m Qwen/Qwen2.5-3B-Instruct -b http://localhost:8000/v1 -k OPENAI_API_KEY \
+  -n 2 -r 1 \
+  -S '{"temperature":0,"max_tokens":160,"response_format":{"type":"json_object"}}' \
+  -a '{"strict": true, "system_prompt": "Output only a single JSON object with exactly two top-level keys: rationale (string) and action (object with keys type, name, text). Allowed types: click, type_and_submit, terminate. Type rules: terminate → name=\"\" and text=\"\"; click → name!=\"\" and text=\"\"; type_and_submit → name!=\"\" and text!=\"\". No markdown, no extra keys, no commentary."}'
+```
+
+Tips
+- Keep temperature low (0–0.2) to reduce drift.
+- Few‑shot anchors can further improve adherence; add minimal exemplars via the `few_shot` env arg.
+
+Example few‑shot anchors (as system messages):
+
+```json
+[{"role":"system","content":"Example output: {\"rationale\":\"...\",\"action\":{\"type\":\"click\",\"name\":\"add_to_cart\",\"text\":\"\"}}"},
+ {"role":"system","content":"Example output: {\"rationale\":\"...\",\"action\":{\"type\":\"type_and_submit\",\"name\":\"search_input\",\"text\":\"laptop\"}}"},
+ {"role":"system","content":"Example output: {\"rationale\":\"...\",\"action\":{\"type\":\"terminate\",\"name\":\"\",\"text\":\"\"}}"}]
+```
+
+Then pass `-a '{"strict":true, "few_shot": <the JSON above>}'`.
+
+### Short Name vs Module Path
+
+This repo also exposes a convenience entrypoint so you can run either form:
+
+- Short env id (requires installation):
+
+  ```bash
+  uv pip install -e .
+  uv run vf-eval shop-r1-env -a '{"strict":true}'
+  ```
+
+- Direct module path (no install needed):
+
+  ```bash
+  PYTHONPATH="$PWD:$PWD/environments" uv run vf-eval environments.shop_r1 -a '{"strict":true}'
+  ```
+
+### Endpoint Registry (optional)
+
+Avoid repeating `-b/-k` by creating `./configs/endpoints.py`:
+
+```python
+ENDPOINTS = {
+  "openai": {"model": "gpt-4o-mini", "url": "https://api.openai.com/v1", "key": "OPENAI_API_KEY"},
+  "local-qwen": {"model": "Qwen/Qwen2.5-3B-Instruct", "url": "http://localhost:8000/v1", "key": "OPENAI_API_KEY"}
+}
+```
+
+Then run: `vf-eval shop-r1 -m openai -a '{"strict":true}'`.
+
 5. **Generate a synthetic dataset (JSONL) and point the env to it:**
 
    ```bash

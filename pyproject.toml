@@ -12,6 +12,7 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["environments", "environments.shop_r1"]
+py-modules = ["shop_r1_env"]
 
 [project.scripts]
 shop-r1-synth = "environments.shop_r1.synthesize:main"

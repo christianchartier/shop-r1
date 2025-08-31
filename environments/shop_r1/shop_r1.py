@@ -78,6 +78,35 @@ EXAMPLES: List[Dict[str, Any]] = [
         ],
         "answer": {"type": "terminate"},
     },
+    {
+        "prompt": [
+            {
+                "role": "user",
+                "content": (
+                    "Context: <html><body><h1>Search page</h1>"
+                    "<input id='search_input'>Search</input></body></html>.\n"
+                    "You are at the start of a shopping session. Provide a JSON"
+                    " with your rationale and next action."
+                ),
+            }
+        ],
+        "answer": {"type": "type_and_submit", "name": "search_input", "text": "headphones"},
+    },
+    {
+        "prompt": [
+            {
+                "role": "user",
+                "content": (
+                    "Context: <html><body><h1>Search results for 'headphones'</h1>"
+                    "<button id='view_details'>View Details</button>"
+                    "<button id='add_to_cart'>Add to Cart</button></body></html>.\n"
+                    "Previous actions: type_and_submit(search_input='headphones').\n"
+                    "Provide a JSON with your rationale and next action."
+                ),
+            }
+        ],
+        "answer": {"type": "click", "name": "view_details"},
+    },
 ]
 
 
@@ -269,6 +298,35 @@ class JSONActionParser(ParserBase):
         r = obj.get("rationale")
         return r if isinstance(r, str) else ""
 
+
+# ---------------------------------------------------------------------------
+# Strict-mode helpers (paper-faithful schema enforcement)
+
+ALLOWED_TYPES = {"click", "type_and_submit", "terminate"}
+
+
+def _is_strict_top(obj: Dict[str, Any]) -> bool:
+    return isinstance(obj, dict) and set(obj.keys()) == {"rationale", "action"}
+
+
+def _is_strict_action_obj(act: Dict[str, Any]) -> bool:
+    return isinstance(act, dict) and set(act.keys()) == {"type", "name", "text"}
+
+
+def _is_strict_action_semantics(act: Dict[str, Any]) -> bool:
+    t = act.get("type")
+    name = act.get("name")
+    text = act.get("text")
+    if t not in ALLOWED_TYPES or not isinstance(name, str) or not isinstance(text, str):
+        return False
+    if t == "terminate":
+        return name == "" and text == ""
+    if t == "click":
+        return (name != "") and (text == "")
+    if t == "type_and_submit":
+        return (name != "") and (text != "")
+    return False
+
     def get_format_reward_func(self):
         def format_reward(parser: JSONActionParser, completion: str, answer: Dict[str, Any], **_) -> float:
             obj = parser._parse_json(completion)
@@ -332,6 +390,8 @@ class ShopR1Config:
     # Dataset options
     dataset_path: Optional[str] = None
     max_examples: Optional[int] = None
+    # Strict schema enforcement
+    strict: bool = False
 
 
 def _approx_tokens(text: str) -> int:
@@ -449,7 +509,13 @@ def load_environment(**kwargs) -> SingleTurnEnv:
       - enable_self_certainty: bool, w_self_certainty > 0 to include the term
       - sc_calib_center/sc_calib_scale/sc_clip_min/sc_clip_max
       - w_format/w_rationale/w_type/w_attribute/w_value/w_self_certainty
+      - strict: bool, enforce exact schema without normalization
+      - sim_threshold: float, value similarity threshold (default 0.75)
     """
+    # Pull strict/sim flags off kwargs so they don't leak into SingleTurnEnv
+    strict_flag = bool(kwargs.pop("strict", False))
+    sim_threshold = float(kwargs.pop("sim_threshold", 0.75))
+
     cfg = ShopR1Config(
         w_format=float(kwargs.get("w_format", 0.5)),
         w_rationale=float(kwargs.get("w_rationale", 0.13)),
@@ -471,7 +537,8 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         sc_calib_scale=float(kwargs.get("sc_calib_scale", 1.0)),
         sc_clip_min=float(kwargs.get("sc_clip_min", 0.0)),
         sc_clip_max=float(kwargs.get("sc_clip_max", 1.0)),
-        sim_threshold=float(kwargs.get("sim_threshold", 0.75)),
+        sim_threshold=sim_threshold,
+        strict=strict_flag,
         dataset_path=kwargs.get("dataset_path") or os.environ.get("SHOP_R1_DATASET"),
         max_examples=int(os.environ.get("SHOP_R1_MAX_EXAMPLES", kwargs.get("max_examples") or 0)) or None,
     )
@@ -536,17 +603,22 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         obj = parser._parse_json(completion)  # type: ignore[attr-defined]
         if obj is None:
             return 0.0
-        obj = parser._normalize_obj(obj)
-        if not isinstance(obj.get("rationale"), str):
-            return 0.0
-        act = obj.get("action")
-        if not isinstance(act, dict):
-            return 0.0
-        if not isinstance(act.get("type"), str):
-            return 0.0
-        for k in ("name", "text"):
-            if k in act and not isinstance(act[k], str):
+        if cfg.strict:
+            act = obj.get("action", {})
+            if not (_is_strict_top(obj) and _is_strict_action_obj(act) and _is_strict_action_semantics(act)):
                 return 0.0
+        else:
+            obj = parser._normalize_obj(obj)
+            if not isinstance(obj.get("rationale"), str):
+                return 0.0
+            act = obj.get("action")
+            if not isinstance(act, dict):
+                return 0.0
+            if not isinstance(act.get("type"), str):
+                return 0.0
+            for k in ("name", "text"):
+                if k in act and not isinstance(act[k], str):
+                    return 0.0
         prompt = extras.get("prompt") or []
         ans = _get_ans(answer, extras)
         return 1.0 * _compute_dars_scale(cfg, prompt, ans)
@@ -559,52 +631,87 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         return sc
 
     def _action_type_reward(completion: str, answer: Any, **extras) -> float:
-        pred = parser.parse_answer(completion) or {}
         ans = _get_ans(answer, extras)
-        base = 1.0 if pred.get("type") == ans.get("type") else 0.0
+        if cfg.strict:
+            obj = parser._parse_json(completion) or {}
+            act = obj.get("action", {})
+            if not (_is_strict_action_obj(act) and _is_strict_action_semantics(act)):
+                base = 0.0
+            else:
+                base = 1.0 if act.get("type") == ans.get("type") else 0.0
+        else:
+            pred = parser.parse_answer(completion) or {}
+            base = 1.0 if pred.get("type") == ans.get("type") else 0.0
         prompt = extras.get("prompt") or []
         return base * _compute_dars_scale(cfg, prompt, ans)
 
     def _attribute_reward(completion: str, answer: Any, **extras) -> float:
-        pred = parser.parse_answer(completion) or {}
         ans = _get_ans(answer, extras)
         true_type = ans.get("type")
         base = 0.0
-        if true_type == "click":
-            base = cfg.w_click_attr_presence if (pred.get("name") or "").strip() else 0.0
-        elif true_type == "type_and_submit":
-            if (pred.get("name") or "").strip():
-                base += cfg.w_type_submit_name_presence
-            if (pred.get("text") or "").strip():
-                base += cfg.w_type_submit_text_presence
-        return base
+        if cfg.strict:
+            obj = parser._parse_json(completion) or {}
+            act = obj.get("action", {})
+            if not (_is_strict_action_obj(act) and _is_strict_action_semantics(act)):
+                return 0.0
+            if true_type == "click" and (act.get("name") or "").strip():
+                base = cfg.w_click_attr_presence
+            elif true_type == "type_and_submit":
+                if (act.get("name") or "").strip():
+                    base += cfg.w_type_submit_name_presence
+                if (act.get("text") or "").strip():
+                    base += cfg.w_type_submit_text_presence
+            return base
+        else:
+            pred = parser.parse_answer(completion) or {}
+            if true_type == "click":
+                base = cfg.w_click_attr_presence if (pred.get("name") or "").strip() else 0.0
+            elif true_type == "type_and_submit":
+                if (pred.get("name") or "").strip():
+                    base += cfg.w_type_submit_name_presence
+                if (pred.get("text") or "").strip():
+                    base += cfg.w_type_submit_text_presence
+            return base
 
     def _value_reward(completion: str, answer: Any, **extras) -> float:
-        pred = parser.parse_answer(completion) or {}
         ans = _get_ans(answer, extras)
         t = ans.get("type")
         if t == "terminate":
             return 0.0
-        # ROUGE-L similarities with thresholding
         def sim(a: str, b: str) -> float:
             s = rouge_l(a, b)
             return s if s >= cfg.sim_threshold else 0.0
 
         reward = 0.0
-        if t == "click":
-            # DARS × ROUGE-L(name)
-            r_name = sim((pred.get("name") or "").strip(), (ans.get("name") or "").strip())
-            prompt = extras.get("prompt") or []
-            reward += cfg.dars_factor * _compute_dars_scale(cfg, prompt, ans) * r_name
-        else:  # type_and_submit
-            # 0.1 × ROUGE-L(name)
-            r_name = sim((pred.get("name") or "").strip(), (ans.get("name") or "").strip())
-            reward += cfg.w_type_submit_name_sim * r_name
-            # DARS × ROUGE-L(text)
-            r_text = sim((pred.get("text") or "").strip(), (ans.get("text") or "").strip())
-            prompt = extras.get("prompt") or []
-            reward += cfg.dars_factor * _compute_dars_scale(cfg, prompt, ans) * r_text
-        return reward
+        if cfg.strict:
+            obj = parser._parse_json(completion) or {}
+            act = obj.get("action", {})
+            if not (_is_strict_action_obj(act) and _is_strict_action_semantics(act)):
+                return 0.0
+            if t == "click":
+                r_name = sim((act.get("name") or "").strip(), (ans.get("name") or "").strip())
+                prompt = extras.get("prompt") or []
+                reward += cfg.dars_factor * _compute_dars_scale(cfg, prompt, ans) * r_name
+            else:
+                r_name = sim((act.get("name") or "").strip(), (ans.get("name") or "").strip())
+                reward += cfg.w_type_submit_name_sim * r_name
+                r_text = sim((act.get("text") or "").strip(), (ans.get("text") or "").strip())
+                prompt = extras.get("prompt") or []
+                reward += cfg.dars_factor * _compute_dars_scale(cfg, prompt, ans) * r_text
+            return reward
+        else:
+            pred = parser.parse_answer(completion) or {}
+            if t == "click":
+                r_name = sim((pred.get("name") or "").strip(), (ans.get("name") or "").strip())
+                prompt = extras.get("prompt") or []
+                reward += cfg.dars_factor * _compute_dars_scale(cfg, prompt, ans) * r_name
+            else:
+                r_name = sim((pred.get("name") or "").strip(), (ans.get("name") or "").strip())
+                reward += cfg.w_type_submit_name_sim * r_name
+                r_text = sim((pred.get("text") or "").strip(), (ans.get("text") or "").strip())
+                prompt = extras.get("prompt") or []
+                reward += cfg.dars_factor * _compute_dars_scale(cfg, prompt, ans) * r_text
+            return reward
 
     def _self_certainty_reward(parser: JSONActionParser, completion: str, answer: Dict[str, Any], **extras) -> float:
         avg_lp = _extract_avg_logprob_from_kwargs(**extras)

@@ -116,6 +116,12 @@ vf-eval shop-r1 \
 
 In strict mode, any deviation (extra keys, missing keys, wrong types, wrong empty/non‑empty values, code fences) yields 0 reward.
 
+Helpful configs for strict runs:
+- `normalize_variants=false`: disable alias normalization; only canonical keys `{type,name,text}` pass.
+- `gate_subrewards_on_type=true` (default): attribute/value rewards require correct `action.type`.
+- `debug_rewards=true`: prints which strict check failed and present keys.
+- `debug_logprobs=true`: prints detected avg logprob and where it was found.
+
 ### Getting Non‑Zero Rewards Under Strict
 
 Models adhere best when you use structured outputs:
@@ -157,6 +163,11 @@ Example few‑shot anchors (as system messages):
 ```
 
 Then pass `-a '{"strict":true, "few_shot": <the JSON above>}'`.
+ 
+Troubleshooting strict zeros
+- If the model emits `{rationale, next_action}` or alias fields like `element_id`, `value`, `submit`, strict will fail. Prefer `response_format=json_schema` (if supported), `temperature: 0`, and strict few‑shot anchors.
+- Use `debug_rewards=true` to see exactly which check failed and the keys present.
+- If rationale reward is 0, verify token logprobs are returned and enable `debug_logprobs=true` to inspect extras.
 
 ### Short Name vs Module Path
 
@@ -250,6 +261,10 @@ vf-eval shop-r1 -m openai --model-id Qwen/Qwen2.5-3B-Instruct -n 10 -r 2
 
 If the extras are plumbed, the self‑certainty term in the environment will be active.
 
+Notes on logprob wiring
+- The environment extracts token logprobs from OpenAI/vLLM ChatCompletion objects threaded by verifiers under `extras['state'].completion` or `extras['state'].responses[0]`.
+- Enable `debug_logprobs=true` to print the detected avg_logprob and extras keys.
+
 What is the "extras" flag?
 
 - Purpose: pass provider‑specific request options that aren’t modeled as first‑class CLI flags. Here you use it to ask the provider to return token logprobs.
@@ -309,7 +324,8 @@ Each JSONL row will include a `rationale` field alongside `prompt` and `answer`.
 
 Additionally, configure your inference to return token logprobs so the self‑certainty
 reward is active. For OpenAI-compatible providers, pass `{"logprobs":5,"top_logprobs":5}`
-in the inference section (key names vary by launcher; consult your Prime RL config schema).
+in the inference section (key names vary by launcher; consult your Prime RL config schema). The env
+will read logprobs from `completion.choices[0].logprobs.content[*].logprob`.
 
 ## Extending the Environment
 
@@ -330,6 +346,13 @@ replicate the Shop‑R1 setup you should:
 
 Refer to the Shop‑R1 paper and the Verifiers documentation for
 additional guidance on dataset preparation and reward design.
+
+## Recent Findings
+
+- Schema drift explains strict zeros: prompts saying “rationale and next action” push models to output `next_action`. We updated defaults to say “rationale and action”, but strict still requires `{type,name,text}`.
+- Logprob paths: verifiers stores OpenAI/vLLM responses under `extras['state'].completion` or `extras['state'].responses[0]`; the env now reads both to compute self‑certainty.
+- Type‑gated subrewards: attribute/value credit is now gated by predicted type to prevent reward leakage.
+- DARS factor: paper‑aligned default is `1000`; it amplifies long‑text similarity when type matches.
 
 ## End-to-End on Prime via Web UI (excruciating detail)
 
@@ -435,6 +458,7 @@ Use this checklist to complete a paper‑faithful implementation and reproductio
 - DARS (difficulty‑aware reward scaling)
   - [x] Defaults: `dars_factor = 1000` and weights for type/context/value difficulty; all exposed as config.
   - [x] Gate similarity with threshold 0.75; verify click vs type_and_submit reward paths.
+  - [x] Gate subrewards by type match: `gate_subrewards_on_type=true`.
 
 - Hierarchical rewards (Table 1)
   - [x] Type: +0.3 on exact match {click, type_and_submit, terminate}.
@@ -445,6 +469,7 @@ Use this checklist to complete a paper‑faithful implementation and reproductio
   - [ ] Implement `MultiTurnEnv` with per‑episode state (page HTML, history), `env_response(...)`, and `is_completed(...)`.
   - [ ] Config for whole‑session vs latest‑step context (paper evaluates both).
   - [ ] Episode‑level aggregation if any delayed signals are required.
+  - [ ] Session JSONL schema + converter and strict validator CLI.
 
 - Dataset + loaders
   - [x] Define JSONL schema for step data `{prompt, answer{type,name?,text?}}` and loader.
@@ -464,10 +489,12 @@ Use this checklist to complete a paper‑faithful implementation and reproductio
 - Tests + CI
   - [ ] Unit tests: parser strict/normalize; format reward; hierarchical rewards; DARS; self‑certainty.
   - [ ] Mock provider test for logprobs path.
+  - [ ] Type‑gated subrewards; strict schema failures; DARS scaling determinism.
 
 - Logging + analysis
 - [ ] Verbose mode to dump parsed JSON, normalized action, and per‑reward components.
 - [ ] Optional W&B logging for reward breakdowns and self‑certainty.
+ - [ ] `gate_all_on_format` option to zero all action rewards when format fails (for ablations).
 
 ## Power Down (stop billing) and Reboot Notes
 

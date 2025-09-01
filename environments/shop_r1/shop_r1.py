@@ -44,7 +44,7 @@ EXAMPLES: List[Dict[str, Any]] = [
                     "Context: <html><body><h1>Search page</h1>"
                     "<input id='search_input'>Search</input></body></html>.\n"
                     "You are at the start of a shopping session. Provide a JSON"
-                    " with your rationale and next action."
+                    " with your rationale and action."
                 ),
             }
         ],
@@ -58,7 +58,7 @@ EXAMPLES: List[Dict[str, Any]] = [
                     "Context: <html><body><h1>Search results for 'laptop'</h1>"
                     "<button id='add_to_cart'>Add to Cart</button></body></html>.\n"
                     "Previous actions: type_and_submit(search_input='laptop').\n"
-                    "Provide a JSON with your rationale and next action."
+                    "Provide a JSON with your rationale and action."
                 ),
             }
         ],
@@ -72,7 +72,7 @@ EXAMPLES: List[Dict[str, Any]] = [
                     "Context: <html><body><h1>Cart</h1><p>Your cart contains 1 item."\
                     "</p><button id='checkout'>Checkout</button></body></html>.\n"
                     "Previous actions: type_and_submit(search_input='laptop'), click(add_to_cart).\n"
-                    "Provide a JSON with your rationale and next action."
+                    "Provide a JSON with your rationale and action."
                 ),
             }
         ],
@@ -86,7 +86,7 @@ EXAMPLES: List[Dict[str, Any]] = [
                     "Context: <html><body><h1>Search page</h1>"
                     "<input id='search_input'>Search</input></body></html>.\n"
                     "You are at the start of a shopping session. Provide a JSON"
-                    " with your rationale and next action."
+                    " with your rationale and action."
                 ),
             }
         ],
@@ -101,7 +101,7 @@ EXAMPLES: List[Dict[str, Any]] = [
                     "<button id='view_details'>View Details</button>"
                     "<button id='add_to_cart'>Add to Cart</button></body></html>.\n"
                     "Previous actions: type_and_submit(search_input='headphones').\n"
-                    "Provide a JSON with your rationale and next action."
+                    "Provide a JSON with your rationale and action."
                 ),
             }
         ],
@@ -217,6 +217,28 @@ class JSONActionParser(ParserBase):
             return cand
         except Exception:
             return None
+
+    def _is_single_json_only(self, completion: Any) -> bool:
+        """True if the entire completion is exactly one JSON object.
+
+        Enforces the paper's strict requirement: output a single JSON object
+        with no extra prose, code fences, or trailing text.
+        """
+        text = self._extract_text(completion)
+        if not isinstance(text, str) or not text.strip():
+            return False
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return False
+        candidate = text[start : end + 1]
+        if text.strip() != candidate:
+            return False
+        try:
+            obj = json.loads(candidate)
+        except Exception:
+            return False
+        return isinstance(obj, dict)
 
     def _parse_json(self, completion: Any) -> Optional[Dict[str, Any]]:
         cand = self._find_json(completion)
@@ -392,6 +414,13 @@ class ShopR1Config:
     max_examples: Optional[int] = None
     # Strict schema enforcement
     strict: bool = False
+    # When not strict, optionally normalize variant schemas to canonical
+    normalize_variants: bool = True
+    # Debug flags
+    debug_logprobs: bool = False
+    debug_rewards: bool = False
+    # Gate sub-rewards on correct type match (paper-faithful)
+    gate_subrewards_on_type: bool = True
 
 
 def _approx_tokens(text: str) -> int:
@@ -423,6 +452,7 @@ def _compute_dars_scale(cfg: ShopR1Config, prompt: List[Dict[str, str]], answer:
 
 
 def _extract_avg_logprob_from_kwargs(**kwargs) -> Optional[float]:
+    # Common flat placements of token logprobs
     for key in ("completion_info", "meta", "extras"):
         info = kwargs.get(key)
         if isinstance(info, dict):
@@ -454,6 +484,85 @@ def _extract_avg_logprob_from_kwargs(**kwargs) -> Optional[float]:
                 return sum(vals) / len(vals)
         if isinstance(arr, (int, float)):
             return float(arr)
+    # Inspect nested structures used by verifiers/openai clients
+    def _as_dict(x):
+        # Best-effort to convert model objects to dict-like access
+        if isinstance(x, dict):
+            return x
+        # Try pydantic v2 BaseModel
+        for fn in ("model_dump", "dict"):
+            try:
+                if hasattr(x, fn):
+                    d = getattr(x, fn)()
+                    if isinstance(d, dict):
+                        return d
+            except Exception:
+                pass
+        return None
+
+    def _avg_lp_from_choice(choice) -> Optional[float]:
+        # Accept dict or object with attributes
+        lp = None
+        if isinstance(choice, dict):
+            lp = choice.get("logprobs")
+        else:
+            lp = getattr(choice, "logprobs", None)
+        if lp is None:
+            return None
+        # OpenAI logprobs object has .content (list of tokens)
+        content = None
+        if isinstance(lp, dict):
+            content = lp.get("content") or lp.get("tokens")
+        else:
+            content = getattr(lp, "content", None) or getattr(lp, "tokens", None)
+        vals: list[float] = []
+        if isinstance(content, list) and content:
+            for tok in content:
+                if isinstance(tok, dict):
+                    v = tok.get("logprob")
+                    if isinstance(v, (int, float)):
+                        vals.append(float(v))
+                else:
+                    v = getattr(tok, "logprob", None)
+                    if isinstance(v, (int, float)):
+                        vals.append(float(v))
+        # Some providers may put list of floats directly
+        if not vals:
+            if isinstance(lp, list):
+                vals = [float(v) for v in lp if isinstance(v, (int, float))]
+        if vals:
+            return sum(vals) / max(1, len(vals))
+        return None
+
+    def _avg_lp_from_completion(comp) -> Optional[float]:
+        if comp is None:
+            return None
+        # Dict view
+        d = _as_dict(comp) or {}
+        choices = None
+        if isinstance(d, dict) and "choices" in d:
+            choices = d.get("choices")
+        if choices is None and hasattr(comp, "choices"):
+            choices = getattr(comp, "choices")
+        if isinstance(choices, list) and choices:
+            # average across first choice tokens
+            return _avg_lp_from_choice(choices[0])
+        return None
+
+    for container_key in ("state", "task"):
+        container = kwargs.get(container_key)
+        if isinstance(container, dict):
+            # Try completion first
+            lp = _avg_lp_from_completion(container.get("completion"))
+            if lp is not None:
+                return lp
+            # Try responses list
+            resps = container.get("responses")
+            if isinstance(resps, list):
+                for r in resps:
+                    lp = _avg_lp_from_completion(r)
+                    if lp is not None:
+                        return lp
     return None
 
 
@@ -531,7 +640,7 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         dars_weight_type=float(kwargs.get("dars_weight_type", 0.4)),
         dars_weight_context_len=float(kwargs.get("dars_weight_context_len", 0.3)),
         dars_weight_value_len=float(kwargs.get("dars_weight_value_len", 0.3)),
-        dars_factor=float(kwargs.get("dars_factor", 1.0)),
+        dars_factor=float(kwargs.get("dars_factor", 1000.0)),
         enable_self_certainty=bool(kwargs.get("enable_self_certainty", True)),
         sc_calib_center=float(kwargs.get("sc_calib_center", -2.5)),
         sc_calib_scale=float(kwargs.get("sc_calib_scale", 1.0)),
@@ -541,6 +650,10 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         strict=strict_flag,
         dataset_path=kwargs.get("dataset_path") or os.environ.get("SHOP_R1_DATASET"),
         max_examples=int(os.environ.get("SHOP_R1_MAX_EXAMPLES", kwargs.get("max_examples") or 0)) or None,
+        normalize_variants=bool(kwargs.get("normalize_variants", True)),
+        debug_logprobs=bool(kwargs.get("debug_logprobs", False)),
+        debug_rewards=bool(kwargs.get("debug_rewards", False)),
+        gate_subrewards_on_type=bool(kwargs.get("gate_subrewards_on_type", True)),
     )
 
     # Dataset: load and normalize to include string 'answer' and dict 'info'
@@ -602,22 +715,56 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         # Re-implement format check to avoid signature mismatches
         obj = parser._parse_json(completion)  # type: ignore[attr-defined]
         if obj is None:
+            if cfg.debug_rewards:
+                t = parser._extract_text(completion)  # type: ignore[attr-defined]
+                print("[shop-r1] debug_format: no JSON object found; text=", (t or "").strip()[:280])
             return 0.0
         if cfg.strict:
+            # Enforce single-JSON-object constraint (no extra text)
+            if not parser._is_single_json_only(completion):  # type: ignore[attr-defined]
+                if cfg.debug_rewards:
+                    t = parser._extract_text(completion)  # type: ignore[attr-defined]
+                    print("[shop-r1] debug_format(strict): not single-JSON-only; text=", (t or "").strip()[:280])
+                return 0.0
             act = obj.get("action", {})
-            if not (_is_strict_top(obj) and _is_strict_action_obj(act) and _is_strict_action_semantics(act)):
+            top_ok = _is_strict_top(obj)
+            act_obj_ok = _is_strict_action_obj(act)
+            sem_ok = _is_strict_action_semantics(act)
+            if not (top_ok and act_obj_ok and sem_ok):
+                if cfg.debug_rewards:
+                    print(
+                        "[shop-r1] debug_format(strict): checks:",
+                        {"top_keys": set(obj.keys()),
+                         "top_ok": top_ok,
+                         "action_keys": set(act.keys()) if isinstance(act, dict) else None,
+                         "action_obj_ok": act_obj_ok,
+                         "sem_ok": sem_ok,
+                         "type": act.get("type") if isinstance(act, dict) else None,
+                         "name": act.get("name") if isinstance(act, dict) else None,
+                         "text": act.get("text") if isinstance(act, dict) else None},
+                    )
                 return 0.0
         else:
-            obj = parser._normalize_obj(obj)
+            # Only normalize variants when explicitly allowed (development mode)
+            if cfg.normalize_variants:
+                obj = parser._normalize_obj(obj)
             if not isinstance(obj.get("rationale"), str):
+                if cfg.debug_rewards:
+                    print("[shop-r1] debug_format: missing/invalid rationale string; keys=", set(obj.keys()))
                 return 0.0
             act = obj.get("action")
             if not isinstance(act, dict):
+                if cfg.debug_rewards:
+                    print("[shop-r1] debug_format: missing action object; obj keys=", set(obj.keys()))
                 return 0.0
             if not isinstance(act.get("type"), str):
+                if cfg.debug_rewards:
+                    print("[shop-r1] debug_format: missing action.type string; action keys=", set(act.keys()))
                 return 0.0
             for k in ("name", "text"):
                 if k in act and not isinstance(act[k], str):
+                    if cfg.debug_rewards:
+                        print("[shop-r1] debug_format: action field not string:", k, type(act.get(k)))
                     return 0.0
         prompt = extras.get("prompt") or []
         ans = _get_ans(answer, extras)
@@ -628,6 +775,41 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         # Prefer token-level distributions; fall back to avg logprob heuristic
         avg_lp = _extract_avg_logprob_from_kwargs(**extras)
         sc = _self_certainty_score(cfg, avg_lp)
+        if cfg.debug_logprobs:
+            try:
+                keys = sorted(list(extras.keys()))
+            except Exception:
+                keys = []
+            print(f"[shop-r1] debug_logprobs: avg_logprob={avg_lp!r}, self_certainty={sc:.4f}, extras_keys={keys}")
+            # Inspect common nesting points where providers stash metadata
+            for k in ("task", "state"):
+                v = extras.get(k)
+                if isinstance(v, dict):
+                    sub_keys = list(v.keys())
+                    print(f"[shop-r1] debug_logprobs: extras['{k}'] keys=", sub_keys[:20])
+                    # If completion info is nested, show its keys
+                    ci = v.get("completion_info") or v.get("meta") or v.get("extras")
+                    if isinstance(ci, dict):
+                        print(f"[shop-r1] debug_logprobs: extras['{k}'].(completion_info|meta|extras) keys=", list(ci.keys())[:20])
+                    # Inspect known slots used by verifiers
+                    comp = v.get("completion")
+                    if isinstance(comp, dict):
+                        print("[shop-r1] debug_logprobs: extras['", k, "'].completion keys=", list(comp.keys())[:20])
+                        # OpenAI-like shape may have choices[0].logprobs
+                        ch = comp.get("choices")
+                        if isinstance(ch, list) and ch and isinstance(ch[0], dict):
+                            print("[shop-r1] debug_logprobs: completion.choices[0] keys=", list(ch[0].keys())[:20])
+                            lp0 = ch[0].get("logprobs")
+                            if lp0 is not None:
+                                print("[shop-r1] debug_logprobs: completion.choices[0].logprobs present (type)", type(lp0))
+                    resps = v.get("responses")
+                    if isinstance(resps, list) and resps:
+                        r0 = resps[0]
+                        print("[shop-r1] debug_logprobs: extras['", k, "'].responses[0] type=", type(r0))
+                        if isinstance(r0, dict):
+                            print("[shop-r1] debug_logprobs: responses[0] keys=", list(r0.keys())[:20])
+                            if "logprobs" in r0:
+                                print("[shop-r1] debug_logprobs: responses[0].logprobs present (type)", type(r0.get("logprobs")))
         return sc
 
     def _action_type_reward(completion: str, answer: Any, **extras) -> float:
@@ -654,6 +836,11 @@ def load_environment(**kwargs) -> SingleTurnEnv:
             act = obj.get("action", {})
             if not (_is_strict_action_obj(act) and _is_strict_action_semantics(act)):
                 return 0.0
+            pred_type = act.get("type")
+            if cfg.gate_subrewards_on_type and (pred_type != true_type):
+                if cfg.debug_rewards:
+                    print(f"[shop-r1] debug_attr: gated by type mismatch pred={pred_type} true={true_type}")
+                return 0.0
             if true_type == "click" and (act.get("name") or "").strip():
                 base = cfg.w_click_attr_presence
             elif true_type == "type_and_submit":
@@ -664,6 +851,11 @@ def load_environment(**kwargs) -> SingleTurnEnv:
             return base
         else:
             pred = parser.parse_answer(completion) or {}
+            pred_type = pred.get("type")
+            if cfg.gate_subrewards_on_type and (pred_type != true_type):
+                if cfg.debug_rewards:
+                    print(f"[shop-r1] debug_attr: gated by type mismatch pred={pred_type} true={true_type}")
+                return 0.0
             if true_type == "click":
                 base = cfg.w_click_attr_presence if (pred.get("name") or "").strip() else 0.0
             elif true_type == "type_and_submit":
@@ -688,6 +880,11 @@ def load_environment(**kwargs) -> SingleTurnEnv:
             act = obj.get("action", {})
             if not (_is_strict_action_obj(act) and _is_strict_action_semantics(act)):
                 return 0.0
+            pred_type = act.get("type")
+            if cfg.gate_subrewards_on_type and (pred_type != t):
+                if cfg.debug_rewards:
+                    print(f"[shop-r1] debug_value: gated by type mismatch pred={pred_type} true={t}")
+                return 0.0
             if t == "click":
                 r_name = sim((act.get("name") or "").strip(), (ans.get("name") or "").strip())
                 prompt = extras.get("prompt") or []
@@ -701,6 +898,11 @@ def load_environment(**kwargs) -> SingleTurnEnv:
             return reward
         else:
             pred = parser.parse_answer(completion) or {}
+            pred_type = pred.get("type")
+            if cfg.gate_subrewards_on_type and (pred_type != t):
+                if cfg.debug_rewards:
+                    print(f"[shop-r1] debug_value: gated by type mismatch pred={pred_type} true={t}")
+                return 0.0
             if t == "click":
                 r_name = sim((pred.get("name") or "").strip(), (ans.get("name") or "").strip())
                 prompt = extras.get("prompt") or []
@@ -725,10 +927,11 @@ def load_environment(**kwargs) -> SingleTurnEnv:
 
     system_prompt = kwargs.pop(
         "system_prompt",
-        "You are a shopping assistant tasked with simulating human behaviour. "
-        "Given the page context and past actions, output a JSON object with two keys: "
-        "'rationale' (your reasoning) and 'action' (an object with 'type', 'name' and 'text'). "
-        "For 'terminate' actions leave 'name' and 'text' empty.",
+        "Output only a single JSON object with exactly two top-level keys: "
+        "rationale (string) and action (object with keys type, name, text). "
+        "Allowed types: click, type_and_submit, terminate. Rules: terminate→name=\"\" & text=\"\"; "
+        "click→name!=\"\" & text=\"\"; type_and_submit→name!=\"\" & text!=\"\". "
+        "No markdown, no extra keys, no commentary.",
     )
 
     return SingleTurnEnv(

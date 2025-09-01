@@ -111,7 +111,7 @@ Enable strict mode and set the value similarity threshold via env args:
 ```bash
 vf-eval shop-r1 \
   -m gpt-4.1-mini \
-  -a '{"strict": true, "sim_threshold": 0.75}'
+  -a '{"strict": true, "normalize_variants": false, "sim_threshold": 0.75}'
 ```
 
 In strict mode, any deviation (extra keys, missing keys, wrong types, wrong empty/non‑empty values, code fences) yields 0 reward.
@@ -141,7 +141,7 @@ vf-eval shop-r1 \
   -m Qwen/Qwen2.5-3B-Instruct -b http://localhost:8000/v1 -k OPENAI_API_KEY \
   -n 2 -r 1 \
   -S '{"temperature":0,"max_tokens":160,"response_format":{"type":"json_object"}}' \
-  -a '{"strict": true, "system_prompt": "Output only a single JSON object with exactly two top-level keys: rationale (string) and action (object with keys type, name, text). Allowed types: click, type_and_submit, terminate. Type rules: terminate → name=\"\" and text=\"\"; click → name!=\"\" and text=\"\"; type_and_submit → name!=\"\" and text!=\"\". No markdown, no extra keys, no commentary."}'
+  -a '{"strict": true, "normalize_variants": false, "system_prompt": "Output only a single JSON object with exactly two top-level keys: rationale (string) and action (object with keys type, name, text). Allowed types: click, type_and_submit, terminate. Type rules: terminate → name=\"\" and text=\"\"; click → name!=\"\" and text=\"\"; type_and_submit → name!=\"\" and text!=\"\". No markdown, no extra keys, no commentary."}'
 ```
 
 Tips
@@ -423,23 +423,23 @@ Notes
 Use this checklist to complete a paper‑faithful implementation and reproductions.
 
 - Strict schema + format reward
-  - [ ] Add a `strict_mode` flag (default true for paper runs) to reject any non‑canonical keys; disable normalization when strict.
-  - [ ] Keep a `normalize_variants` flag (default false for paper runs) to map aliases only for development.
-  - [ ] Enforce “single JSON object, nothing else” (no prose/code fences).
+  - [x] Add a `strict` flag (default off; enable for paper runs) to reject any non‑canonical keys; normalization is bypassed when strict.
+  - [x] Add a `normalize_variants` flag (default true; set false for paper runs) to map aliases only for development.
+  - [x] Enforce “single JSON object, nothing else” (no prose/code fences) in strict mode.
 
 - Self‑certainty reward (rationale)
   - [ ] Implement average KL(p || U) over rationale tokens (Eq. 3). If only top‑k is available, renormalize top‑k and add residual mass.
   - [ ] Ensure we isolate rationale tokens (not action) when computing s.
-  - [ ] Expose `w_self_certainty` and rationale‑only toggles.
+  - [x] Expose `w_self_certainty` and enable/disable via config.
 
 - DARS (difficulty‑aware reward scaling)
-  - [ ] Confirm defaults: `dars_factor = 1000` (paper), weights for type/context/value difficulty; expose all as config.
-  - [ ] Gate similarity with threshold 0.75; verify click vs type_and_submit reward paths.
+  - [x] Defaults: `dars_factor = 1000` and weights for type/context/value difficulty; all exposed as config.
+  - [x] Gate similarity with threshold 0.75; verify click vs type_and_submit reward paths.
 
 - Hierarchical rewards (Table 1)
-  - [ ] Type: +0.3 on exact match {click, type_and_submit, terminate}.
-  - [ ] Sub‑action presence: click +0.2 (name); type_and_submit +0.1 (name) +0.1 (text).
-  - [ ] Similarity: type_and_submit +0.1×ROUGE‑L(name) and DARS×ROUGE‑L(text); click DARS×ROUGE‑L(name).
+  - [x] Type: +0.3 on exact match {click, type_and_submit, terminate}.
+  - [x] Sub‑action presence: click +0.2 (name); type_and_submit +0.1 (name) +0.1 (text).
+  - [x] Similarity: type_and_submit +0.1×ROUGE‑L(name) and DARS×ROUGE‑L(text); click DARS×ROUGE‑L(name).
 
 - Multi‑turn environment (sessions)
   - [ ] Implement `MultiTurnEnv` with per‑episode state (page HTML, history), `env_response(...)`, and `is_completed(...)`.
@@ -447,19 +447,19 @@ Use this checklist to complete a paper‑faithful implementation and reproductio
   - [ ] Episode‑level aggregation if any delayed signals are required.
 
 - Dataset + loaders
-  - [ ] Define JSONL schemas for steps `{prompt, answer{type,name?,text?}}` and sessions `{session_id, steps: [...]}`.
+  - [x] Define JSONL schema for step data `{prompt, answer{type,name?,text?}}` and loader.
   - [ ] Add session→steps converter; include simplified HTML and prior actions per step.
   - [ ] Validator CLI to check schema and required fields.
 
 - Prompting + sampling
-  - [ ] Provide Appendix‑style strict prompt and minimal one‑shot examples per action.
-  - [ ] Default temp band 0.6–0.8 (paper); set 0.6 for eval; allow overrides.
-  - [ ] Optional `response_format=json_object` where supported.
+  - [x] Provide Appendix‑style strict prompt and minimal one‑shot examples per action.
+  - [x] Default temp band guidance 0.6–0.8; set 0.6 for eval; allow overrides.
+  - [x] Optional `response_format=json_object` where supported.
 
 - Integration + configs
-  - [ ] Prime Hub: `prime env init/push` with versioned releases.
-  - [ ] Prime RL TOMLs with paper weights (α=0.005, β=0.001), DARS=1000, temp≈0.6.
-  - [ ] Ensure inference returns token logprobs/top_logprobs.
+  - [x] Prime Hub: `prime env init/push` with versioned releases.
+  - [x] Prime RL TOMLs with paper weights (α=0.005, β=0.001), DARS=1000, temp≈0.6.
+  - [x] Ensure inference returns token logprobs/top_logprobs.
 
 - Tests + CI
   - [ ] Unit tests: parser strict/normalize; format reward; hierarchical rewards; DARS; self‑certainty.

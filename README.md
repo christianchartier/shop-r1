@@ -209,7 +209,7 @@ This section maps each component in the Shop‑R1 paper to the implementation he
 - Strict single‑JSON output: top‑level `{rationale, action}` and action keys `{type, name, text}`; no prose or fences. Status: Complete. See single‑JSON enforcement `environments/shop_r1/shop_r1.py:221` and strict shape+semantics `environments/shop_r1/shop_r1.py:326`.
 
 — Rewards (per Figure 1/Table 1) —
-- Format reward (+0.5 when valid; else 0): Complete (minor deviation). Implemented in `_format_reward` with weight `w_format=0.5`; returns 1.0 on valid format. See `environments/shop_r1/shop_r1.py:714` and weights `environments/shop_r1/shop_r1.py:923`. Note: currently scaled by DARS (narrow range 0.85–1.15). Paper presents this as a constant; TODO below captures making it strictly constant.
+- Format reward (+0.5 when valid; else 0): Complete. Implemented in `_format_reward` with weight `w_format=0.5`; returns 1.0 on valid format (no DARS scaling). See `environments/shop_r1/shop_r1.py:735` and weights `environments/shop_r1/shop_r1.py:923`.
 - Rationale self‑certainty (+0.13): Partial. Implemented via avg logprob→sigmoid as a proxy for KL(p‖U). See `_self_certainty_score` at `environments/shop_r1/shop_r1.py:569` and usage in `_rationale_reward` `environments/shop_r1/shop_r1.py:736` with weight `w_rationale=0.13`. TODO below captures implementing exact average KL to uniform when token distributions are available.
 - Action type reward (+0.3 exact match): Complete. See `_action_type_reward` `environments/shop_r1/shop_r1.py:815` with weight `w_type=0.3` and optional type‑gating of sub‑rewards.
 - Sub‑action attribute presence: Complete. `click`: +0.2 if `name` present; `type_and_submit`: +0.1 if `name`, +0.1 if `text`. See `_attribute_reward` `environments/shop_r1/shop_r1.py:830` and config weights `environments/shop_r1/shop_r1.py:368`.
@@ -238,9 +238,9 @@ This section maps each component in the Shop‑R1 paper to the implementation he
 - Model backbones (Qwen‑2.5‑{0.5B,1.5B,3B}‑Instruct) and infrastructure (verl/prime‑rl FSDP, A100 80GB): TODO. Provide tested configs and hardware notes.
 - Endpoint registry and structured outputs: Complete. See `configs/endpoints.py:1` and strict JSON settings in the Usage section above.
 
-Known Deviations (to resolve)
-- Format reward uses DARS scaling (minor). For exact paper parity, set `_format_reward` to return a constant 1.0 without DARS and rely solely on `w_format=0.5`.
-- Self‑certainty proxy. Replace avg‑logprob→sigmoid with the average KL(p‖U) over rationale tokens when token‑distribution data are accessible from the inference server.
+Status Notes
+- Format reward: now strictly constant (no DARS scaling) and weighted by `w_format=0.5`, matching the paper.
+- Self‑certainty: implemented as average normalized certainty from top‑k token distributions (entropy/avg‑KL proxy) with fallback to avg‑logprob when distributions are unavailable.
 
 Planned TODOs (bounty‑oriented)
 - Add SFT + GRPO training scripts and configs with paper hyperparameters and logging.
@@ -469,11 +469,7 @@ Once your SSH public key is saved in the web UI, you do NOT need to re‑provide
   - Prepare vLLM and start the server (keep running):
     - `pip install --upgrade pip`
     - `pip install vllm`
-    - (optional) `apt-get update && apt-get install -y tmux && tmux new -s vllm`
-    - `python -m vllm.entrypoints.openai.api_server \
-        --model Qwen/Qwen2.5-3B-Instruct \
-        --host 0.0.0.0 --port 8000 \
-        --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90`
+    - `python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-3B-Instruct --host 0.0.0.0 --port 8000 --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90`
 
 - Terminal B (local Mac; keep open)
   - Forward port 8000 to your Mac (verbose helps if there’s an error):
@@ -544,15 +540,3 @@ Use this checklist to complete a paper‑faithful implementation and reproductio
 - [ ] Verbose mode to dump parsed JSON, normalized action, and per‑reward components.
 - [ ] Optional W&B logging for reward breakdowns and self‑certainty.
  - [ ] `gate_all_on_format` option to zero all action rewards when format fails (for ablations).
-
-## Power Down (stop billing) and Reboot Notes
-
-Power down (when you’re done)
-- Terminal C (remote): stop vLLM
-  - If running in the foreground: press Ctrl‑C
-  - If running in tmux: `tmux kill-session -t vllm`
-- Terminal B (local): stop SSH port‑forward
-  - Press Ctrl‑C
-- Terminate the GPU instance (stops hourly charges)
-  - Web UI: Instances → select your instance → Terminate
-  - Or CLI: `prime pods terminate <pod-id>`

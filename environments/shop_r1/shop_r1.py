@@ -566,8 +566,132 @@ def _extract_avg_logprob_from_kwargs(**kwargs) -> Optional[float]:
     return None
 
 
-def _self_certainty_score(cfg: ShopR1Config, avg_logprob: Optional[float]) -> float:
-    if (avg_logprob is None) or (not cfg.enable_self_certainty):
+def _extract_topk_logprobs_from_completion(comp) -> Optional[List[List[float]]]:
+    """Extract per-token top-k logprobs (as floats) from an OpenAI-like completion.
+
+    Returns a list of tokens; each token is a list of top-k logprobs.
+    """
+    def _as_dict(x):
+        if isinstance(x, dict):
+            return x
+        for fn in ("model_dump", "dict"):
+            try:
+                if hasattr(x, fn):
+                    d = getattr(x, fn)()
+                    if isinstance(d, dict):
+                        return d
+            except Exception:
+                pass
+        return None
+
+    d = _as_dict(comp) or {}
+    choices = None
+    if isinstance(d, dict) and "choices" in d:
+        choices = d.get("choices")
+    if choices is None and hasattr(comp, "choices"):
+        choices = getattr(comp, "choices")
+    if not (isinstance(choices, list) and choices):
+        return None
+    choice0 = choices[0]
+    logprobs = None
+    if isinstance(choice0, dict):
+        logprobs = choice0.get("logprobs")
+    else:
+        logprobs = getattr(choice0, "logprobs", None)
+    if logprobs is None:
+        return None
+    content = None
+    if isinstance(logprobs, dict):
+        content = logprobs.get("content") or logprobs.get("tokens")
+    else:
+        content = getattr(logprobs, "content", None) or getattr(logprobs, "tokens", None)
+    if not (isinstance(content, list) and content):
+        return None
+    per_token: List[List[float]] = []
+    for tok in content:
+        tops = None
+        if isinstance(tok, dict):
+            tops = tok.get("top_logprobs")
+        else:
+            tops = getattr(tok, "top_logprobs", None)
+        vals: List[float] = []
+        if isinstance(tops, list) and tops:
+            for t in tops:
+                lp = None
+                if isinstance(t, dict):
+                    lp = t.get("logprob")
+                else:
+                    lp = getattr(t, "logprob", None)
+                if isinstance(lp, (int, float)):
+                    vals.append(float(lp))
+        if vals:
+            per_token.append(vals)
+    return per_token or None
+
+
+def _extract_topk_logprobs_from_kwargs(**kwargs) -> Optional[List[List[float]]]:
+    # Inspect nested structures used by verifiers/openai clients
+    for container_key in ("state", "task"):
+        container = kwargs.get(container_key)
+        if isinstance(container, dict):
+            # Try completion first
+            seq = _extract_topk_logprobs_from_completion(container.get("completion"))
+            if seq:
+                return seq
+            # Try responses list
+            resps = container.get("responses")
+            if isinstance(resps, list):
+                for r in resps:
+                    seq = _extract_topk_logprobs_from_completion(r)
+                    if seq:
+                        return seq
+    return None
+
+
+def _norm_certainty_from_topk(per_token_topk: List[List[float]]) -> float:
+    """Compute normalized certainty 1 - H/ln(K_eff), averaged across tokens.
+
+    Approximates average KL(p || U) up to an additive constant by using
+    1 - H(p)/ln(K_eff), where K_eff is the number of buckets (top-k plus
+    an OTHER bucket for residual probability mass).
+    """
+    if not per_token_topk:
+        return 0.0
+    scores: List[float] = []
+    for vals in per_token_topk:
+        ps = [math.exp(lp) for lp in vals if isinstance(lp, (int, float))]
+        s_top = sum(ps)
+        s_top = min(max(s_top, 0.0), 1.0)
+        residual = max(0.0, 1.0 - s_top)
+        buckets = ps[:]
+        if residual > 1e-8:
+            buckets.append(residual)
+        Z = sum(buckets) or 1.0
+        buckets = [max(1e-12, p / Z) for p in buckets]
+        H = -sum(p * math.log(p) for p in buckets)
+        K_eff = float(len(buckets))
+        if K_eff <= 1:
+            scores.append(1.0)
+            continue
+        H_max = math.log(K_eff)
+        c = 1.0 - (H / H_max if H_max > 0 else 1.0)
+        c = min(1.0, max(0.0, c))
+        scores.append(c)
+    if not scores:
+        return 0.0
+    return sum(scores) / len(scores)
+
+
+def _self_certainty_score(cfg: ShopR1Config, **kwargs) -> float:
+    if not cfg.enable_self_certainty:
+        return 0.0
+    tk = _extract_topk_logprobs_from_kwargs(**kwargs)
+    if tk:
+        c = _norm_certainty_from_topk(tk)
+        return float(min(cfg.sc_clip_max, max(cfg.sc_clip_min, c)))
+    # Fallback: avg logprob → sigmoid (legacy behaviour)
+    avg_logprob = _extract_avg_logprob_from_kwargs(**kwargs)
+    if avg_logprob is None:
         return 0.0
     z = (avg_logprob - cfg.sc_calib_center) * cfg.sc_calib_scale
     s = 1.0 / (1.0 + math.exp(-z))
@@ -712,7 +836,7 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         return answer if isinstance(answer, dict) else {}
 
     def _format_reward(completion: str, answer: Any, **extras) -> float:
-        # Re-implement format check to avoid signature mismatches
+        # Constant format reward (paper-faithful; no DARS scaling)
         obj = parser._parse_json(completion)  # type: ignore[attr-defined]
         if obj is None:
             if cfg.debug_rewards:
@@ -766,21 +890,17 @@ def load_environment(**kwargs) -> SingleTurnEnv:
                     if cfg.debug_rewards:
                         print("[shop-r1] debug_format: action field not string:", k, type(act.get(k)))
                     return 0.0
-        prompt = extras.get("prompt") or []
-        ans = _get_ans(answer, extras)
-        return 1.0 * _compute_dars_scale(cfg, prompt, ans)
+        return 1.0
 
     def _rationale_reward(completion: str, answer: Any, **extras) -> float:
-        # Self‑certainty via average KL(p || U) approximation from token logprobs
-        # Prefer token-level distributions; fall back to avg logprob heuristic
-        avg_lp = _extract_avg_logprob_from_kwargs(**extras)
-        sc = _self_certainty_score(cfg, avg_lp)
+        # Self‑certainty via normalized entropy / avg‑KL proxy from top‑k logprobs
+        sc = _self_certainty_score(cfg, **extras)
         if cfg.debug_logprobs:
             try:
                 keys = sorted(list(extras.keys()))
             except Exception:
                 keys = []
-            print(f"[shop-r1] debug_logprobs: avg_logprob={avg_lp!r}, self_certainty={sc:.4f}, extras_keys={keys}")
+            print(f"[shop-r1] debug_logprobs: self_certainty={sc:.4f}, extras_keys={keys}")
             # Inspect common nesting points where providers stash metadata
             for k in ("task", "state"):
                 v = extras.get(k)

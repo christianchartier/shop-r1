@@ -485,6 +485,25 @@ Notes
 - If the UI shows a different SSH user (e.g., `ubuntu@`), use that exact user.
 - If you reused an IP and see a host‑key warning, remove the old key: `ssh-keygen -R '[<IP>]:<PORT>'` and reconnect.
 
+## Training & Evaluation
+
+Supervised fine-tuning (SFT)
+- Prepare JSONL with chat `prompt` (list of {role,content}), optional `rationale` (string), and `answer` (action dict). The assistant target is constructed as `{rationale, action}` JSON.
+- Run:
+  - `uv run python scripts/sft_train.py --dataset data/sft.jsonl --model Qwen/Qwen2.5-3B-Instruct --output_dir checkpoints/sft --epochs 4 --lr 2e-5 --per_device_batch_size 1 --grad_accum 64 --max_seq_len 32768`
+
+Reinforcement learning (GRPO)
+- Start a vLLM server for rollouts (see Easy Reboot). Then run:
+  - `uv run python scripts/rl_train_grpo.py --model checkpoints/sft --dataset data/rl.jsonl --output_dir checkpoints/rl_shop_r1 --alpha 0.13 --beta 0.001 --dars_factor 1000 --max_steps 500 --learning_rate 1e-7 --temperature 0.6 --per_device_batch_size 1 --num_generations 8 --grad_accum 8`
+
+Exact-match metrics (paper-style)
+- Evaluate exact action accuracy, action type accuracy, and macro-F1:
+  - `uv run python scripts/eval_actions.py --dataset data/rl.jsonl --model_alias local-qwen --sim_threshold 0.75 --out eval_results.json`
+
+Component ablations (training toggles)
+- Run short GRPO passes for ablation presets (format/rationale/DARS/type-only):
+  - `uv run python scripts/ablate_components.py --model Qwen/Qwen2.5-3B-Instruct --dataset data/rl.jsonl --max_steps 100 --num_generations 4 --grad_accum 4 --out ablations.json`
+
 
 ## TODOs (Paper‑complete implementation)
 

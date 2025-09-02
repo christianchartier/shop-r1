@@ -199,6 +199,55 @@ ENDPOINTS = {
 
 Then run: `vf-eval shop-r1 -m openai -a '{"strict":true}'`.
 
+## Paper Compliance Matrix (Shop‑R1)
+
+This section maps each component in the Shop‑R1 paper to the implementation here. Items are marked as Complete, Partial (approximation), or TODO with code references and notes.
+
+— Core Task & Output Schema —
+- Problem setup: single‑step next‑action prediction over simplified HTML with prior actions in prompt. Status: Complete. See `environments/shop_r1/shop_r1.py:659` (dataset rows with `prompt`) and examples at `environments/shop_r1/shop_r1.py:38`.
+- Action space: `click`, `type_and_submit`, `terminate` with sub‑fields (`name`, `text`) and semantics. Status: Complete. See strict checks `environments/shop_r1/shop_r1.py:334` and allowed types `environments/shop_r1/shop_r1.py:323`.
+- Strict single‑JSON output: top‑level `{rationale, action}` and action keys `{type, name, text}`; no prose or fences. Status: Complete. See single‑JSON enforcement `environments/shop_r1/shop_r1.py:221` and strict shape+semantics `environments/shop_r1/shop_r1.py:326`.
+
+— Rewards (per Figure 1/Table 1) —
+- Format reward (+0.5 when valid; else 0): Complete (minor deviation). Implemented in `_format_reward` with weight `w_format=0.5`; returns 1.0 on valid format. See `environments/shop_r1/shop_r1.py:714` and weights `environments/shop_r1/shop_r1.py:923`. Note: currently scaled by DARS (narrow range 0.85–1.15). Paper presents this as a constant; TODO below captures making it strictly constant.
+- Rationale self‑certainty (+0.13): Partial. Implemented via avg logprob→sigmoid as a proxy for KL(p‖U). See `_self_certainty_score` at `environments/shop_r1/shop_r1.py:569` and usage in `_rationale_reward` `environments/shop_r1/shop_r1.py:736` with weight `w_rationale=0.13`. TODO below captures implementing exact average KL to uniform when token distributions are available.
+- Action type reward (+0.3 exact match): Complete. See `_action_type_reward` `environments/shop_r1/shop_r1.py:815` with weight `w_type=0.3` and optional type‑gating of sub‑rewards.
+- Sub‑action attribute presence: Complete. `click`: +0.2 if `name` present; `type_and_submit`: +0.1 if `name`, +0.1 if `text`. See `_attribute_reward` `environments/shop_r1/shop_r1.py:830` and config weights `environments/shop_r1/shop_r1.py:368`.
+- Text‑similarity value reward: Complete. ROUGE‑L with threshold (default 0.75). `click`: `DARS×ROUGE‑L(name)`; `type_and_submit`: `0.1×ROUGE‑L(name) + DARS×ROUGE‑L(text)`. See `_value_reward` `environments/shop_r1/shop_r1.py:868` and config `sim_threshold` at `environments/shop_r1/shop_r1.py:362`.
+- Difficulty‑Aware Reward Scaling (DARS): Complete. Scaling uses action type, context length, and value length; factor defaults to 1000 for long‑text components. See `_compute_dars_scale` `environments/shop_r1/shop_r1.py:430` and `dars_factor` at `environments/shop_r1/shop_r1.py:357`.
+- Gate sub‑rewards on correct type: Complete. See `gate_subrewards_on_type` at `environments/shop_r1/shop_r1.py:423`, applied in `_attribute_reward` and `_value_reward`.
+
+— Data & Prompting —
+- Simplified HTML context and action history concatenation: Complete. Prompts encode page HTML and prior actions; see examples `environments/shop_r1/shop_r1.py:38` and dataset normalization `environments/shop_r1/shop_r1.py:668`.
+- Synthetic dataset support: Complete. Generator in `environments/shop_r1/synthesize.py:1` with console script `shop-r1-synth` (see `pyproject.toml:17`). Optional rationale generation via OpenAI‑compatible API: `environments/shop_r1/synthesize.py:61`.
+- Real dataset (52,137 sessions) and persona‑free Claude 3.5 rationales (Bedrock): TODO. This repo ships a synthetic placeholder and an optional rationale generator; real corpus and Bedrock pipeline are not included.
+
+— Training Pipeline (SFT → RL) —
+- SFT joint training on ⟨context, action, rationale⟩: TODO. Not included. Provide instructions/config for SFT with the chosen backbone.
+- RL with GRPO on the hybrid rewards, KL to reference policy (β), and rationale term weight (α): TODO. Not included. The rubric composes all rewards for verifiable RL, but trainer/integration scaffolding is not present. Verifiers includes GRPOTrainer (see `docs/willccbb-verifiers-8a5edab282632443.txt:400`); add runnable configs.
+- Hyperparameters (paper defaults): TODO. Document α=0.005, β=0.001, DARS factor=1000, temp=0.6, context length=32k, RL steps=500, SFT 4 epochs, LR schedules.
+
+— Evaluation & Ablations —
+- Exact‑match accuracy and action‑type accuracy/F1: TODO. Provide an evaluation script computing these metrics on held‑out data. Current environment focuses on reward shaping.
+- Per‑type breakdown (click/type_and_submit/terminate): TODO. Add reporting utilities and confusion summaries.
+- Sampling temperature ablation: TODO. Add sweep script to replicate the paper’s figure.
+- Component ablations (format/rationale/DARS/hierarchical vs binary): TODO. Add toggles to training scripts and a table generator.
+- Whole‑session vs latest‑step context: TODO. Add a flag to truncate prompts and compare metrics.
+
+— Reproducibility & Ops —
+- Model backbones (Qwen‑2.5‑{0.5B,1.5B,3B}‑Instruct) and infrastructure (verl/prime‑rl FSDP, A100 80GB): TODO. Provide tested configs and hardware notes.
+- Endpoint registry and structured outputs: Complete. See `configs/endpoints.py:1` and strict JSON settings in the Usage section above.
+
+Known Deviations (to resolve)
+- Format reward uses DARS scaling (minor). For exact paper parity, set `_format_reward` to return a constant 1.0 without DARS and rely solely on `w_format=0.5`.
+- Self‑certainty proxy. Replace avg‑logprob→sigmoid with the average KL(p‖U) over rationale tokens when token‑distribution data are accessible from the inference server.
+
+Planned TODOs (bounty‑oriented)
+- Add SFT + GRPO training scripts and configs with paper hyperparameters and logging.
+- Add evaluation/ablation scripts to reproduce Tables 2–5 and Figure 2.
+- Add data loaders for proprietary or OPeRA‑like datasets, with privacy‑preserving release instructions or a synthetic drop‑in.
+- Prepare a PR to `PrimeIntellect-ai/prime-environments` once compliance items above are met; include README’s compliance matrix and strict mode docs. (We can clone that repo later to validate formatting.)
+
 5. **Generate a synthetic dataset (JSONL) and point the env to it:**
 
    ```bash
@@ -434,7 +483,7 @@ Once your SSH public key is saved in the web UI, you do NOT need to re‑provide
   - Point verifiers to the local forward and run eval with logprobs + self‑certainty:
     - `export OPENAI_API_KEY=EMPTY`
     - `export OPENAI_BASE_URL=http://localhost:8000/v1`
-    - `PYTHONPATH="$PWD:$PWD/environments" vf-eval environments.shop_r1 -m "Qwen/Qwen2.5-3B-Instruct" -b "$OPENAI_BASE_URL" -k OPENAI_API_KEY -S '{"logprobs":true,"top_logprobs":5,"temperature":0.2,"response_format":{"type":"json_object"}}' -a '{"w_self_certainty":0.13}' -n 2 -r 1`
+    - `vf-eval shop-r1 -m local-qwen -a '{"strict":false,"normalize_variants":true,"sim_threshold":0.75,"debug_rewards":true,"w_self_certainty":0.13}' -S '{"logprobs":true,"top_logprobs":5,"temperature":0.2,"response_format":{"type":"json_object"}}' -n 2 -r 1 -v`
 
 Notes
 - If the UI shows a different SSH user (e.g., `ubuntu@`), use that exact user.

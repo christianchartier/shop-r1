@@ -47,7 +47,27 @@ def main():
     )
 
     # Base model (optionally SFT checkpoint)
-    model, tokenizer = vf.get_model_and_tokenizer(args.model)
+    try:
+        get_mat = getattr(vf, "get_model_and_tokenizer", None)
+    except Exception:
+        get_mat = None
+    if callable(get_mat):
+        model, tokenizer = get_mat(args.model)
+    else:
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True, trust_remote_code=True)
+        if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+            tokenizer.pad_token = tokenizer.eos_token
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            device_map="auto",
+            torch_dtype="auto",
+            trust_remote_code=True,
+        )
+        if getattr(model.config, "pad_token_id", None) is None and tokenizer.pad_token_id is not None:
+            model.config.pad_token_id = tokenizer.pad_token_id
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
 
     # GRPO Trainer hyperparameters (vLLM server must be running)
     tr_args = vf.grpo_defaults(run_name="shop-r1-grpo")
@@ -76,4 +96,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

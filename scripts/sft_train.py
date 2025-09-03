@@ -131,7 +131,6 @@ def main():
             tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(
             args.model,
-            device_map="auto",
             torch_dtype="auto",
             attn_implementation="sdpa",
             trust_remote_code=True,

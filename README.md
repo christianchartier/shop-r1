@@ -88,10 +88,28 @@ installing this package into your Python environment you can call
    vf-install shop-r1
    ```
 
-4. **Evaluate a model (built-in examples):**
+4. **Evaluate a model (built-in examples or your endpoint):**
+
+   Quick sanity (built-in examples):
 
    ```bash
    vf-eval shop-r1 -m gpt-4.1-mini -n 3 -r 2
+   ```
+
+   Paper‑style strict evaluation against a served model:
+
+   ```bash
+   # Start an OpenAI-compatible vLLM server on the remote (not TRL)
+   python -m vllm.entrypoints.openai.api_server \
+     --model Qwen/Qwen2.5-3B-Instruct --host 0.0.0.0 --port 8000 \
+     --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90
+
+   # On local: port forward and run strict eval
+   export OPENAI_API_KEY=EMPTY && export OPENAI_BASE_URL=http://localhost:8000/v1
+   vf-eval shop-r1 -m local-qwen \
+     -a '{"strict":true,"normalize_variants":false,"sim_threshold":0.75,"debug_rewards":true,"debug_logprobs":true,"w_self_certainty":0.13,"system_prompt":"Output only a single JSON object with exactly two top-level keys: rationale (string) and action (object with keys type, name, text). Allowed types: click, type_and_submit, terminate. Type rules: terminate -> name=\\\"\\\" and text=\\\"\\\"; click -> name!=\\\"\\\" and text=\\\"\\\"; type_and_submit -> name!=\\\"\\\" and text!=\\\"\\\". No markdown, no extra keys, no commentary."}' \
+     -S '{"logprobs":true,"top_logprobs":5,"temperature":0,"response_format":{"type":"json_object"}}' \
+     -n 50 -r 1 -v
    ```
 
 ## Strict Mode (Paper‑Faithful)
@@ -223,16 +241,14 @@ This section maps each component in the Shop‑R1 paper to the implementation he
 - Real dataset (52,137 sessions) and persona‑free Claude 3.5 rationales (Bedrock): TODO. This repo ships a synthetic placeholder and an optional rationale generator; real corpus and Bedrock pipeline are not included.
 
 — Training Pipeline (SFT → RL) —
-- SFT joint training on ⟨context, action, rationale⟩: TODO. Not included. Provide instructions/config for SFT with the chosen backbone.
-- RL with GRPO on the hybrid rewards, KL to reference policy (β), and rationale term weight (α): TODO. Not included. The rubric composes all rewards for verifiable RL, but trainer/integration scaffolding is not present. Verifiers includes GRPOTrainer (see `docs/willccbb-verifiers-8a5edab282632443.txt:400`); add runnable configs.
-- Hyperparameters (paper defaults): TODO. Document α=0.005, β=0.001, DARS factor=1000, temp=0.6, context length=32k, RL steps=500, SFT 4 epochs, LR schedules.
+- SFT joint training on ⟨context, action, rationale⟩: Implemented. See `scripts/sft_train.py` (left‑truncation, prompt masking, chat template) and `commands.md` for suggested hyperparameters.
+- RL with GRPO on the hybrid rewards, KL to reference policy (β), and rationale term weight (α): Implemented (experimental). See `scripts/rl_train_grpo.py` and TRL/vLLM server instructions. Note: TRL weight‑sync currently requires multi‑GPU (server and trainer ranks on different devices). On single‑GPU boxes NCCL fails with “Duplicate GPU detected”; see Known Issues.
+- Hyperparameters (paper defaults): Partially documented; see `commands.md` (α ~ 0.13 for rationale proxy, β ~ 0.001 KL, DARS 1000, temp 0.6, context up to 32k, RL steps ~500, SFT 4 epochs, small per‑device batch with accumulation).
 
 — Evaluation & Ablations —
-- Exact‑match accuracy and action‑type accuracy/F1: TODO. Provide an evaluation script computing these metrics on held‑out data. Current environment focuses on reward shaping.
-- Per‑type breakdown (click/type_and_submit/terminate): TODO. Add reporting utilities and confusion summaries.
-- Sampling temperature ablation: TODO. Add sweep script to replicate the paper’s figure.
-- Component ablations (format/rationale/DARS/hierarchical vs binary): TODO. Add toggles to training scripts and a table generator.
-- Whole‑session vs latest‑step context: TODO. Add a flag to truncate prompts and compare metrics.
+- Exact‑match, action‑type accuracy/F1, per‑type breakdown: Implemented. See `scripts/eval_actions.py` (pairs predictions with ground truth and produces metrics JSON).
+- Sampling temperature/Component ablations: Basic hooks included; extend via `vf-eval` flags and simple sweeps. A dedicated ablations script can be added next.
+- Whole‑session vs latest‑step context: Supported via prompt assembly in env; add a flag if you need strict truncation comparisons.
 
 — Reproducibility & Ops —
 - Model backbones (Qwen‑2.5‑{0.5B,1.5B,3B}‑Instruct) and infrastructure (verl/prime‑rl FSDP, A100 80GB): TODO. Provide tested configs and hardware notes.
@@ -243,10 +259,19 @@ Status Notes
 - Self‑certainty: implemented as average normalized certainty from top‑k token distributions (entropy/avg‑KL proxy) with fallback to avg‑logprob when distributions are unavailable.
 
 Planned TODOs (bounty‑oriented)
-- Add SFT + GRPO training scripts and configs with paper hyperparameters and logging.
+- Extend GRPO configs (paper hyperparameters) and logging tables.
 - Add evaluation/ablation scripts to reproduce Tables 2–5 and Figure 2.
 - Add data loaders for proprietary or OPeRA‑like datasets, with privacy‑preserving release instructions or a synthetic drop‑in.
 - Prepare a PR to `PrimeIntellect-ai/prime-environments` once compliance items above are met; include README’s compliance matrix and strict mode docs. (We can clone that repo later to validate formatting.)
+
+## Known Issues / Workarounds
+
+- TRL vLLM Communicator (single‑GPU): RL weight‑sync uses NCCL across server and trainer ranks. On single‑GPU machines this yields `NCCL WARN Duplicate GPU detected …` and fails communicator init. Workarounds:
+  - Use 2× GPUs: pin server to GPU0 and trainer to GPU1 (see `commands.md`).
+  - If only 1 GPU: run evaluation only (OpenAI vLLM server) or a no‑KL sanity RL run (no communicator; β=0), acknowledging it is not strictly faithful to TRL weight updates.
+  - Injector: we inject `client_device_uuid` and rewrite `host=127.0.0.1` for `/init_communicator` compatibility.
+
+See `commit.md` for the current phase status and `commands.md` for a minimal, up‑to‑date operations ledger.
 
 5. **Generate a synthetic dataset (JSONL) and point the env to it:**
 

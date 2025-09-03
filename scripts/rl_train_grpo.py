@@ -2,6 +2,8 @@ import argparse
 import os
 
 import verifiers as vf
+import uuid
+import requests as _requests
 
 
 def main():
@@ -50,38 +52,22 @@ def main():
         env = load_env(**env_kwargs)
 
     # Base model (optionally SFT checkpoint)
-    try:
-        get_mat = getattr(vf, "get_model_and_tokenizer", None)
-    except Exception:
-        get_mat = None
-    if callable(get_mat):
-        # Prefer SDPA attention to avoid FlashAttention2 dependency
-        model, tokenizer = get_mat(
-            args.model,
-            use_liger=False,
-            model_kwargs={
-                "attn_implementation": "sdpa",
-                "device_map": "auto",
-                "torch_dtype": "auto",
-                "trust_remote_code": True,
-            },
-        )
-    else:
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True, trust_remote_code=True)
-        if tokenizer.pad_token is None and tokenizer.eos_token is not None:
-            tokenizer.pad_token = tokenizer.eos_token
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model,
-            device_map="auto",
-            torch_dtype="auto",
-            attn_implementation="sdpa",
-            trust_remote_code=True,
-        )
-        if getattr(model.config, "pad_token_id", None) is None and tokenizer.pad_token_id is not None:
-            model.config.pad_token_id = tokenizer.pad_token_id
-        if hasattr(model.config, "use_cache"):
-            model.config.use_cache = False
+    # Always load via Transformers to avoid accelerate offload hooks in some verifiers builds
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True, trust_remote_code=True)
+    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype="auto",
+        attn_implementation="sdpa",
+        trust_remote_code=True,
+        low_cpu_mem_usage=False,
+    )
+    if getattr(model.config, "pad_token_id", None) is None and tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = False
 
     # GRPO Trainer hyperparameters (vLLM server must be running)
     tr_args = vf.grpo_defaults(run_name="shop-r1-grpo")
@@ -94,10 +80,93 @@ def main():
     tr_args.max_seq_len = args.max_seq_len
     tr_args.temperature = args.temperature
     tr_args.beta = args.beta
+    # Avoid moving a model that may have accelerate/deepspeed hooks; let the launcher place it
+    try:
+        tr_args.place_model_on_device = False  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    # As an additional safeguard, monkey‑patch HF Trainer's device move to a no‑op
+    try:
+        from transformers.trainer import Trainer as HFTrainer  # type: ignore
+
+        def _noop_move_model_to_device(self, model, device):  # type: ignore[override]
+            return model
+
+        HFTrainer._move_model_to_device = _noop_move_model_to_device  # type: ignore[attr-defined]
+    except Exception:
+        pass
     tr_args.eval_strategy = "steps"
     tr_args.eval_steps = args.eval_steps
     tr_args.save_strategy = "steps"
     tr_args.save_steps = args.save_steps
+
+    # Compatibility patch: some TRL vLLM servers require 'client_device_uuid' in
+    # the init_communicator POST body, and using '0.0.0.0' for host can break NCCL
+    # rendezvous. Intercept requests calls to add 'client_device_uuid' and replace
+    # host with '127.0.0.1' when needed.
+    try:
+        # Patch requests (both top-level and Session)
+        from requests import api as _api, sessions as _sessions  # type: ignore
+        _orig_api_request = _api.request
+        _orig_sess_request = _sessions.Session.request
+
+        def _ensure_payload(kwargs: dict) -> None:
+            j = kwargs.get("json")
+            if isinstance(j, dict):
+                j = dict(j)
+                if "client_device_uuid" not in j:
+                    j["client_device_uuid"] = str(uuid.uuid4())
+                if j.get("host") in (None, "", "0.0.0.0"):
+                    j["host"] = "127.0.0.1"
+                kwargs["json"] = j
+
+        def _inject_payload(method, url, *p_args, **p_kwargs):  # type: ignore[override]
+            try:
+                if isinstance(url, str) and url.rstrip("/").endswith("/init_communicator"):
+                    _ensure_payload(p_kwargs)
+            except Exception:
+                pass
+            return _orig_api_request(method, url, *p_args, **p_kwargs)
+
+        def _sess_inject_payload(self, method, url, *p_args, **p_kwargs):  # type: ignore[override]
+            try:
+                if isinstance(url, str) and url.rstrip("/").endswith("/init_communicator"):
+                    _ensure_payload(p_kwargs)
+            except Exception:
+                pass
+            return _orig_sess_request(self, method, url, *p_args, **p_kwargs)
+
+        _api.request = _inject_payload  # type: ignore[assignment]
+        _sessions.Session.request = _sess_inject_payload  # type: ignore[assignment]
+    except Exception:
+        pass
+
+    try:
+        # Patch httpx client (post and generic request)
+        import httpx  # type: ignore
+        _orig_httpx_post = httpx.Client.post
+        _orig_httpx_request = httpx.Client.request
+
+        def _httpx_post(self, url, *p_args, **p_kwargs):  # type: ignore[override]
+            try:
+                if isinstance(url, str) and url.rstrip("/").endswith("/init_communicator"):
+                    _ensure_payload(p_kwargs)
+            except Exception:
+                pass
+            return _orig_httpx_post(self, url, *p_args, **p_kwargs)
+
+        def _httpx_request(self, method, url, *p_args, **p_kwargs):  # type: ignore[override]
+            try:
+                if isinstance(url, str) and url.rstrip("/").endswith("/init_communicator"):
+                    _ensure_payload(p_kwargs)
+            except Exception:
+                pass
+            return _orig_httpx_request(self, method, url, *p_args, **p_kwargs)
+
+        httpx.Client.post = _httpx_post  # type: ignore[assignment]
+        httpx.Client.request = _httpx_request  # type: ignore[assignment]
+    except Exception:
+        pass
 
     trainer = vf.GRPOTrainer(
         model=model,

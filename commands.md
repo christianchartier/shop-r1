@@ -34,6 +34,9 @@ tail -f vllm.log
 # On your Mac, open a new terminal/tab and connect:
 ssh -p 1234 root@69.19.136.229
 
+# Sync latest code (pull updated training scripts) in Terminal C2.
+git -C /ephemeral/shop-r1 pull --rebase origin main && cd /ephemeral/shop-r1
+
 python3 -m venv .venv && source .venv/bin/activate && python -m pip install -U pip && python -m pip install verifiers datasets requests transformers accelerate peft && python -m pip install -e . && vf-install shop-r1
 
 3) Synthesize a small dataset (run on remote; creates data/sft.jsonl).
@@ -52,19 +55,45 @@ python scripts/sft_train.py --dataset data/sft.jsonl --model Qwen/Qwen2.5-3B-Ins
 
 echo "SFT checkpoint files:" && ls -lh checkpoints/sft | head -n 20
 
-5) Restart vLLM server after SFT (go back to Terminal C tmux/background and start it again as in step 1).
+5) Restart vLLM server after SFT (Terminal C tmux/background; start it again as in step 1).
 
 python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-3B-Instruct --host 0.0.0.0 --port 8000 --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90
 
-5a) Check vLLM health endpoint from the remote box.
+5a) Check vLLM health (Terminal C2 — any remote shell). Note: some vLLM versions return an empty body; check HTTP 200.
 
-curl -s http://localhost:8000/health && echo
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8000/health
 
-6) GRPO training (RL) using the running vLLM server.
+5b) List served models (Terminal C2) to confirm API JSON is reachable.
+
+# If jq is available:
+curl -s http://localhost:8000/v1/models | jq .
+
+# If jq is not installed, install it:
+apt-get update && apt-get install -y jq
+
+# Or, without installing jq, pretty-print via Python:
+curl -s http://localhost:8000/v1/models | python -m json.tool | head -n 40
+
+6) GRPO training (RL) — Terminal C2 (Remote A100). Keep vLLM running in Terminal C tmux.
 
 python scripts/rl_train_grpo.py --model checkpoints/sft --dataset data/sft.jsonl --output_dir checkpoints/rl_shop_r1 --alpha 0.13 --beta 0.001 --dars_factor 1000 --max_steps 500 --learning_rate 1e-7 --temperature 0.6 --per_device_batch_size 1 --num_generations 8 --grad_accum 8
 
-7) Paper metrics (exact‑match, type accuracy, macro‑F1) — run on remote against local vLLM port (forwarded by Terminal B).
+6a) If RL errors about missing verifiers APIs, upgrade verifiers to the latest from GitHub (Terminal C2), then retry step 6.
+
+python -c "import importlib,sys;vf=importlib.import_module('verifiers');ok=all(hasattr(vf,a) for a in ('GRPOTrainer','load_environment'));print('verifiers_ok',ok);sys.exit(0 if ok else 1)" || python -m pip install -U 'verifiers @ git+https://github.com/willccbb/verifiers@main'
+
+6b) If the verifiers upgrade fails due to Python 3.10, install Python 3.11 and use a new venv (Terminal C2), then retry step 6.
+
+# Install Python 3.11 (try default repo first; if it fails, add deadsnakes PPA)
+apt-get update && apt-get install -y python3.11 python3.11-venv || (apt-get update && apt-get install -y software-properties-common && add-apt-repository -y ppa:deadsnakes/ppa && apt-get update && apt-get install -y python3.11 python3.11-venv)
+
+# Create and activate a 3.11 venv, reinstall deps and the project
+python3.11 -m venv .venv311 && source .venv311/bin/activate && python -V && python -m pip install -U pip && python -m pip install 'verifiers @ git+https://github.com/willccbb/verifiers@main' transformers accelerate peft datasets requests && python -m pip install -e .
+
+# Run RL under Python 3.11 venv
+python scripts/rl_train_grpo.py --model checkpoints/sft --dataset data/sft.jsonl --output_dir checkpoints/rl_shop_r1 --alpha 0.13 --beta 0.001 --dars_factor 1000 --max_steps 500 --learning_rate 1e-7 --temperature 0.6 --per_device_batch_size 1 --num_generations 8 --grad_accum 8
+
+7) Paper metrics (exact‑match, type accuracy, macro‑F1) — Terminal C2 (Remote A100). Targets the remote vLLM at localhost:8000.
 
 python scripts/eval_actions.py --dataset data/sft.jsonl --model_alias local-qwen --sim_threshold 0.75 --out eval_results.json
 

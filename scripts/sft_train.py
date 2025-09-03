@@ -133,6 +133,7 @@ def main():
             args.model,
             device_map="auto",
             torch_dtype="auto",
+            attn_implementation="sdpa",
             trust_remote_code=True,
         )
         if getattr(model.config, "pad_token_id", None) is None and tokenizer.pad_token_id is not None:

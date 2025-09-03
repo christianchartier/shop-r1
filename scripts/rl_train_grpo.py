@@ -27,13 +27,12 @@ def main():
     ap.add_argument("--save_steps", type=int, default=100)
     args = ap.parse_args()
 
-    # Environment with Shop-R1 rewards
-    env = vf.load_environment(
-        env_id="shop-r1",
+    # Environment with Shop-R1 rewards (fallback to direct import if verifiers API is missing)
+    load_env_fn = getattr(vf, "load_environment", None)
+    env_kwargs = dict(
         dataset_path=args.dataset,
         strict=args.strict,
         sim_threshold=args.sim_threshold,
-        # Reward weights per paper figure
         w_format=0.5,
         w_rationale=args.alpha,
         w_type=0.3,
@@ -41,10 +40,14 @@ def main():
         w_type_submit_name_presence=0.1,
         w_type_submit_text_presence=0.1,
         w_type_submit_name_sim=0.1,
-        # DARS controls
         enable_dars=True,
         dars_factor=args.dars_factor,
     )
+    if callable(load_env_fn):
+        env = load_env_fn(env_id="shop-r1", **env_kwargs)
+    else:
+        from environments.shop_r1.shop_r1 import load_environment as load_env
+        env = load_env(**env_kwargs)
 
     # Base model (optionally SFT checkpoint)
     try:
@@ -52,7 +55,17 @@ def main():
     except Exception:
         get_mat = None
     if callable(get_mat):
-        model, tokenizer = get_mat(args.model)
+        # Prefer SDPA attention to avoid FlashAttention2 dependency
+        model, tokenizer = get_mat(
+            args.model,
+            use_liger=False,
+            model_kwargs={
+                "attn_implementation": "sdpa",
+                "device_map": "auto",
+                "torch_dtype": "auto",
+                "trust_remote_code": True,
+            },
+        )
     else:
         from transformers import AutoTokenizer, AutoModelForCausalLM
         tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True, trust_remote_code=True)
@@ -62,6 +75,7 @@ def main():
             args.model,
             device_map="auto",
             torch_dtype="auto",
+            attn_implementation="sdpa",
             trust_remote_code=True,
         )
         if getattr(model.config, "pad_token_id", None) is None and tokenizer.pad_token_id is not None:

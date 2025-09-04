@@ -16,7 +16,7 @@ This validates that the environment loads and rewards are computed correctly.
 ```
 
 ### 3. Remote Testing on Prime Intellect Pod
-See `docs/internal/pod_commands.txt` for step-by-step instructions.
+See `FRESH_POD_SETUP.md` for complete step-by-step instructions.
 
 ## Test Files
 

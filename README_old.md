@@ -1,19 +1,18 @@
-# Shop-R1: Rewarding LLMs to Simulate Human Behavior in Online Shopping via RL
+# Shop‑R1 Environment
 
-Implementation of the Shop-R1 environment for [Verifiers](https://github.com/willccbb/verifiers) and the [Prime Environments Hub](https://github.com/PrimeIntellect-ai/prime-environments).
+This package contains a **simplified** implementation of the Shop‑R1
+reinforcement learning environment described in the paper
+*Shop‑R1: Rewarding LLMs to Simulate Human Behavior in Online Shopping via
+Reinforcement Learning*.  The environment is built using the
+[Verifiers](https://github.com/willccbb/verifiers) library and is
+structured for deployment on the Prime Environments Hub.
 
-Based on the paper: ["Shop-R1: Rewarding LLMs to Simulate Human Behavior in Online Shopping via Reinforcement Learning"](https://arxiv.org/abs/2507.17842)
+## Overview
 
-## 🎯 Overview
-
-Shop-R1 is a reinforcement learning framework designed to enhance LLMs for simulating realistic human online shopping behaviors. It decomposes the task into **rationale generation** and **action prediction**, using a hierarchical reward structure with:
-
-- **Format rewards** for valid JSON output
-- **Self-certainty rewards** for rationale generation  
-- **Action-type rewards** with difficulty-aware scaling (DARS)
-- **Sub-action rewards** for fine-grained accuracy
-
-### Output Format
+Shop‑R1 decomposes human shopping behaviour into two sub‑tasks: **rationale
+generation** and **action prediction**.  At each step the agent
+observes a simplified HTML context, thinks about what to do next, and
+outputs a JSON object with two keys:
 
 ```json
 {
@@ -32,40 +31,23 @@ attribute presence (+0.2 for click; +0.1/+0.1 for type_and_submit name/text), an
 similarity rewards with thresholded ROUGE‑L and difficulty‑aware scaling (DARS).  See
 `environments/shop_r1/shop_r1.py` for the concrete implementation.
 
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-pip install -e .
-pip install 'verifiers @ git+https://github.com/willccbb/verifiers@main'
-vf-install shop-r1
-```
-
-### Testing
-
-```bash
-# Quick validation test
-python tests/quick_test.py
-
-# Full evaluation  
-vf-eval shop-r1 -m your-model -s -n 100
-```
-
-For detailed testing instructions, see [`README_TESTING.md`](README_TESTING.md).
-
-## 📁 Project Structure
+## Files
 
 ```
-shop-r1/
-├── environments/shop_r1/    # Core implementation
-│   ├── shop_r1.py          # Environment with rewards
-│   └── synthesize.py       # Data generation
-├── scripts/                # Training scripts
-│   ├── sft_train.py        # Supervised fine-tuning
-│   └── rl_train_grpo.py    # GRPO reinforcement learning  
-├── tests/                  # Testing suite
-└── docs/                   # Documentation
+shop_r1_env/
+├── environments/
+│   └── shop_r1/
+│       └── shop_r1.py   # Environment implementation
+├── pyproject.toml       # Package metadata for installation
+└── README.md            # This document
+```
+
+### `shop_r1.py`
+
+Defines a `JSONActionParser` to extract the rationale and action from
+model completions and computes several verifiable rewards.  A
+placeholder dataset (`EXAMPLES`) demonstrates the required format; in
+practice you should replace this with your own extracted context/action
 pairs from shopping logs.  The `load_environment` function
 returns a `vf.SingleTurnEnv` with an appropriate rubric for RL.
 

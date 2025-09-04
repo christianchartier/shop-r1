@@ -1,6 +1,7 @@
 import argparse
 import json
-from collections import Counter, defaultdict
+import os
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
 from openai import OpenAI

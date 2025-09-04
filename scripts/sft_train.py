@@ -1,7 +1,5 @@
 import argparse
 import json
-import os
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -10,7 +8,6 @@ except Exception:
     class TorchDataset(object):
         pass
 from transformers import (
-    AutoConfig,
     Trainer,
     TrainingArguments,
     AutoTokenizer,

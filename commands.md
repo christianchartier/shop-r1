@@ -358,3 +358,92 @@ PY
 
 ## Terminal C2 (remote) — Run RL via injector (uuid + host fix applied)
 python scripts/rl_inject.py --model checkpoints/sft --dataset data/sft.jsonl --output_dir checkpoints/rl_shop_r1 --alpha 0.13 --beta 0.001 --dars_factor 500 --max_steps 300 --learning_rate 1e-7 --temperature 0.6 --per_device_batch_size 1 --num_generations 2 --grad_accum 2 --max_seq_len 8192
+
+## Fresh Start (2× GPUs, after reboot) — stay on RL blocker
+
+### Terminal C (remote, tmux) — start TRL vLLM server on GPU 0
+tmux new -s vllm -d
+tmux send-keys -t vllm "bash -lc 'export TRANSFORMERS_NO_TORCHVISION=1 NCCL_DEBUG=WARN NCCL_SHM_DISABLE=1 NCCL_IB_DISABLE=1; \nCUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve --model Qwen/Qwen2.5-3B-Instruct --host 0.0.0.0 --port 8000 --max-model-len 8192 --gpu-memory-utilization 0.20'" C-m
+
+### Terminal C2 (remote) — setup env, pull latest, pin versions
+ssh -p 1234 root@62.169.159.154
+mkdir -p /ephemeral && cd /ephemeral && rm -rf shop-r1 && git clone https://github.com/christianchartier/shop-r1.git && cd shop-r1
+python3.11 -m venv .venv311 && source .venv311/bin/activate
+python -m pip install -U pip && python -m pip uninstall -y torchvision || true
+python -m pip install "transformers>=4.55,<5" "trl==0.21.0" "vllm==0.10.1.1" accelerate>=0.30 peft>=0.11 datasets>=2.19 verifiers requests
+python -m pip install -e . && vf-install shop-r1
+
+# Optional: synthesize data if missing
+[ -f data/sft.jsonl ] || python environments/shop_r1/synthesize.py -o data/sft.jsonl -n 1000 --seed 7
+
+### Terminal C2 (remote) — verify TRL endpoints, then run RL on GPU 1
+curl -L -s -o /dev/null -w "WS %{http_code}\n" http://localhost:8000/get_world_size/
+curl -L -s -o /dev/null -w " IC %{http_code}\n" http://localhost:8000/init_communicator/
+
+# Choose model: use SFT if present, else fall back to base
+MODEL=$( [ -d checkpoints/sft ] && echo checkpoints/sft || echo Qwen/Qwen2.5-3B-Instruct )
+
+# Run RL with communicator (server on GPU0, trainer on GPU1)
+CUDA_VISIBLE_DEVICES=1 NCCL_DEBUG=WARN NCCL_SHM_DISABLE=1 NCCL_IB_DISABLE=1 \
+  python scripts/rl_train_grpo.py --model "$MODEL" --dataset data/sft.jsonl --output_dir checkpoints/rl_shop_r1 \
+  --alpha 0.13 --beta 0.001 --dars_factor 500 --max_steps 300 --learning_rate 1e-7 --temperature 0.6 \
+  --per_device_batch_size 1 --num_generations 2 --grad_accum 2 --max_seq_len 8192
+
+# If 422 client_device_uuid occurs, run via injector wrapper instead
+CUDA_VISIBLE_DEVICES=1 NCCL_DEBUG=WARN NCCL_SHM_DISABLE=1 NCCL_IB_DISABLE=1 \
+  python scripts/rl_inject.py --model "$MODEL" --dataset data/sft.jsonl --output_dir checkpoints/rl_shop_r1 \
+  --alpha 0.13 --beta 0.001 --dars_factor 500 --max_steps 300 --learning_rate 1e-7 --temperature 0.6 \
+  --per_device_batch_size 1 --num_generations 2 --grad_accum 2 --max_seq_len 8192
+
+## After Reboot — Evaluation connection fix (A/B/C)
+
+### Terminal C (remote, tmux) — start OpenAI server on 8001 (keeps TRL on 8000)
+tmux new -s openai -d
+tmux send-keys -t openai "bash -lc 'python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-3B-Instruct --host 0.0.0.0 --port 8001 --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90'" C-m
+
+### Terminal B (local) — port forward 8001
+ssh -p 1234 -N -L 8001:localhost:8001 root@62.169.159.154 -v
+
+### Terminal A (local) — set base URL, health check, eval
+export OPENAI_API_KEY=EMPTY && export OPENAI_BASE_URL=http://localhost:8001/v1
+curl -s -o /dev/null -w "HTTP %{http_code}\n" "$OPENAI_BASE_URL/health"
+vf-eval shop-r1 -m local-qwen -a '{"strict":false,"normalize_variants":true,"sim_threshold":0.75,"debug_rewards":true,"debug_logprobs":true,"w_self_certainty":0.13}' -S '{"logprobs":true,"top_logprobs":5,"temperature":0.2,"response_format":{"type":"json_object"}}' -n 2 -r 1 -v
+
+## Fresh 2×GPU Bootstrap (new rig) — recreate venv + servers
+
+### Terminal C2 (remote) — install deps, clone, create venv
+ssh -p 1234 root@62.169.159.154
+apt-get update && apt-get install -y python3.11 python3.11-venv git tmux
+mkdir -p /ephemeral && cd /ephemeral && rm -rf shop-r1 && git clone https://github.com/christianchartier/shop-r1.git && cd shop-r1
+python3.11 -m venv .venv311 && source .venv311/bin/activate && python -m pip install -U pip && python -m pip uninstall -y torchvision || true
+python -m pip install "transformers>=4.55,<5" "trl==0.21.0" "vllm==0.10.1.1" accelerate>=0.30 peft>=0.11 datasets>=2.19 requests 'verifiers @ git+https://github.com/willccbb/verifiers@main'
+python -m pip install -e . && vf-install shop-r1
+[ -f data/sft.jsonl ] || python environments/shop_r1/synthesize.py -o data/sft.jsonl -n 1000 --seed 7
+
+### Terminal C (remote, tmux) — start TRL server on GPU 0 (RL)
+tmux new -s vllm -d
+tmux send-keys -t vllm "bash -lc 'export TRANSFORMERS_NO_TORCHVISION=1 NCCL_DEBUG=WARN NCCL_SHM_DISABLE=1 NCCL_IB_DISABLE=1; \
+CUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve --model Qwen/Qwen2.5-3B-Instruct --host 0.0.0.0 --port 8000 --max-model-len 8192 --gpu-memory-utilization 0.20'" C-m
+
+### Terminal C2 (remote) — run RL on GPU 1 (communicator should succeed)
+cd /ephemeral/shop-r1 && source .venv311/bin/activate
+curl -L -s -o /dev/null -w "WS %\{http_code\}\n" http://localhost:8000/get_world_size/
+curl -L -s -o /dev/null -w " IC %\{http_code\}\n" http://localhost:8000/init_communicator/
+MODEL=$( [ -d checkpoints/sft ] && echo checkpoints/sft || echo Qwen/Qwen2.5-3B-Instruct )
+CUDA_VISIBLE_DEVICES=1 NCCL_DEBUG=WARN NCCL_SHM_DISABLE=1 NCCL_IB_DISABLE=1 \
+  python scripts/rl_train_grpo.py --model "$MODEL" --dataset data/sft.jsonl --output_dir checkpoints/rl_shop_r1 \
+  --alpha 0.13 --beta 0.001 --dars_factor 500 --max_steps 300 --learning_rate 1e-7 --temperature 0.6 \
+  --per_device_batch_size 1 --num_generations 2 --grad_accum 2 --max_seq_len 8192
+
+### Terminal C (remote, tmux) — OpenAI server for evaluation (optional; separate session/port 8001)
+tmux new -s openai -d
+tmux send-keys -t openai "bash -lc 'source /ephemeral/shop-r1/.venv311/bin/activate && \
+python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-3B-Instruct --host 0.0.0.0 --port 8001 --dtype auto --max-model-len 32768 --gpu-memory-utilization 0.90'" C-m
+
+### Terminal B (local) — port forward eval (8001)
+ssh -p 1234 -N -L 8001:localhost:8001 root@62.169.159.154 -v
+
+### Terminal A (local) — health + eval
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8001/health
+export OPENAI_API_KEY=EMPTY && export OPENAI_BASE_URL=http://localhost:8001/v1
+vf-eval shop-r1 -m local-qwen -a '{"strict":false,"normalize_variants":true,"sim_threshold":0.75,"debug_rewards":true,"debug_logprobs":true,"w_self_certainty":0.13}' -S '{"logprobs":true,"top_logprobs":5,"temperature":0.2,"response_format":{"type":"json_object"}}' -n 2 -r 1 -v

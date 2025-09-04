@@ -1,9 +1,7 @@
 import argparse
-import os
 
 import verifiers as vf
 import uuid
-import requests as _requests
 
 
 def main():

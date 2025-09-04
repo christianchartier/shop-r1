@@ -1,0 +1,609 @@
+
+sukrucildirr
+[STRK]
+ — 8/27/25, 1:48 PM
+my timeline is full of PI environment ^^
+Luigi Pagani — 8/27/25, 1:49 PM
+Amazing, viral on my timeline
+Johannes — 8/27/25, 1:50 PM
+Thanks everyone for all the early contributions 🫡 ❤️
+Image
+sukrucildirr
+[STRK]
+ — 8/27/25, 1:53 PM
+I was in but I'm late to submit my environment to work on it
+i hate my life
+lazyg — 8/27/25, 4:21 PM
+@will for the textbooks in the sheet, what is the expectation on the environment? A dataset of all questions and tools to solve it?
+Max Brashear — 8/27/25, 4:23 PM
+Congrats on the launch! We've been cooking up a couple of environments on our end - excited to share them soon
+Mika — 8/27/25, 4:25 PM
+to be confirmed by @will, but we imagine envs with qa pairs from the textbooks. ideally answers are official (we haven't specifically checked this for all books in the list yet). env should ofc include necessary parsing logic to correctly verify llm responses etc. but this should not be the difficult part
+Johannes — 8/27/25, 4:25 PM
+the textbook ones were inspired by this tweet btw 🙂 https://x.com/karpathy/status/1960805995313291488
+
+Andrej Karpathy (@karpathy)
+How amazing it would be if we could extract and reframe all the practice problems from all the textbooks ever written into environments...
+
+X•8/27/25, 1:45 PM
+definitely more open ended on what's the best way to create envs + datasets for them, so if anyone is interested in this kinda project or wants to find a more semi-automated process for it, definitely apply here: https://form.typeform.com/to/ibQawo5e
+Typeform
+Typeform
+Prime Intellect RL Environments Grants
+Turn data collection into an experience with Typeform. Create beautiful online forms, surveys, quizzes, and so much more. Try it for FREE.
+Johannes — 8/27/25, 4:30 PM
+related to this:
+Image
+lazyg — 8/27/25, 4:47 PM
+yep that’s the one
+I will take a closer look at a book and try to come up with a design.
+Working on a blogpost right now detailing my experience in pushing a few envs to the hub
+lazyg — 8/27/25, 4:48 PM
+I think extracting the QA pairs reliably will be the tricky thing
+MadBonze
+[UnAI]
+ — 8/27/25, 5:11 PM
+Hey,
+I was trying to implement WebArena and WebChoreArena envs for the hub.
+I need to deploy some websites for the LLMs to navigate for the eval. The authors of the papers had done this on Amazon EC2 instances. I talked to @will  and he suggested to do it on sandbox for the env. I require the hostname for the server with the deployment, to be given the LLM as part of the url. Check this for reference: https://github.com/web-arena-x/webarena/tree/main/environment_docker#shopping-website-onestopshop
+
+What would be the hostnam for deployment on the sandbox?
+Also, I am making multilingual evals for the env. Currently raised PR for Qwen Polymath benchmark. For measuring language consistency (i.e. if the model is responding in the langauge of the question), I am currently langid. I tried using fasttext, but it requires C++ compilers but I was unsure if the env will have those. So should I switch to langid or switch to some other language classifier? 
+Sinatras — 8/27/25, 5:19 PM
+Started working on pmpp but as you said its open ended since these are not ready evals. Sequence will be, dataset -> eval -> prime env still will submit arhitecture as WIP i guess
+Goliath — 8/27/25, 5:20 PM
+something that isnt obvious from the instructions on the website: execute "uv run prime env install [package]" then "uv run python" to ensure the python env is the same across installation and execution when using an env 
+otherwise you run into an issue "Could not import X environment. Ensure the package for the X environment is installed."
+tikwurp — 8/27/25, 5:27 PM
+thanks, but this still does not work if you want to use prime-rl for training it seems
+getting the same "Could not import X environment. error
+MadBonze
+[UnAI]
+ — 8/27/25, 5:35 PM
+is your env using some specific library that most other libraries might have? try confirming if the env.toml file has the necessary libraries in it
+lazyg — 8/27/25, 6:12 PM
+Alternatively, run uv sync in the directory to find out where your environment is or to create one in the current directory if it contains a pyproject.toml
+will — 8/27/25, 6:22 PM
+textbook one is likely a longer-term project / will be sharing more info shortly about how we're planning on coordinating these (there's a few we have in mind)
+lazyg — 8/27/25, 6:23 PM
+I created a question extraction workflow earlier by sending pdf pages as images and getting structured output. Could potentially reuse it 
+will — 8/27/25, 6:25 PM
+TLDR: if you've already done a few great environment impls so far + want more "work", we have some opportunities for you to go deeper on some longer-term projects (give us a couple days to catch up with everything first though :))
+
+at this point we're probably going to have the smaller/easier bounties reserved for first-time contributors, to ensure that as many people as possible get ample opportunities to pitch in + get some bounties
+tikwurp — 8/27/25, 7:15 PM
+yep the env has the necessary toml files
+Image
+tikwurp — 8/27/25, 7:18 PM
+once i install an environment from primehub, not sure where to find it
+lazyg — 8/27/25, 7:21 PM
+if you are running prime env pull <env_name>, it should be cloned into the same folder. Can you provide ls and check directories? 
+tikwurp — 8/27/25, 7:22 PM
+i did prime env install <env>.  that's what was written in primehub page for the env
+doesnt seem to clone it anywher
+Image
+lazyg — 8/27/25, 9:20 PM
+Interesting benchmark potentially: https://x.com/lyang36/status/1960726356175806533?s=46
+will — 8/27/25, 10:41 PM
+prime env info user/env-name is useful for seeing more explicit install instructions
+Image
+basically it'll just uv pip install  into your local project
+daniel — 8/27/25, 10:49 PM
+does prime env push force the vf_* naming?
+i was just playing around trying to learn about verifiers and the hub. also will we be able to delete environments in case we cringe it
+😄
+https://app.primeintellect.ai/dashboard/environments/danielsveryown/vf_sycophancy_env
+Johannes — 8/27/25, 10:51 PM
+no we had this in earlier versions but not anymore
+Johannes — 8/27/25, 10:52 PM
+prime env delete 🫡
+Image
+daniel — 8/27/25, 10:52 PM
+oh
+😄
+daniel — 8/27/25, 10:52 PM
+it told me that it couldnt push cause it expected vf_* idk
+Johannes — 8/27/25, 10:53 PM
+hmm which version of the prime cli are you on?
+daniel — 8/27/25, 10:55 PM
+daniel@arch syco $ prime -v
+Prime CLI version: 0.3.21
+ive installed it a few hrs ago
+ss — 8/27/25, 10:55 PM
+Hi, I have installed the env as per docs prime env pull primeintellect/aime2025@0.1.9 and running evals using uv run vf-eval aime2025
+During the run, I first get this console msg -  No local endpoint registry found at ./configs/endpoints.py. Please specify the model name (-m), API host base URL (-b), 
+After that I see the logs showing rollouts being executed but the final result has all the rewards as 0
+Autumnn — 8/27/25, 11:20 PM
+It would be great if there was a YouTube video tutorial on how to use Environment Hub for people who want to contribute but are not specialized in AI @Johannes @will
+Like me !
+blueberry — 8/27/25, 11:22 PM
+i wrote some notes from my experience! check it out ⁠environment-hub-beta⁠
+will — 8/27/25, 11:23 PM
+ah, this is for configuring a "library" of API endpoints to use more easily instead of needing to pass model/keyvar/url -- see here for an example
+
+https://github.com/PrimeIntellect-ai/prime-environments/blob/main/configs/endpoints.py
+
+totally optional, just for convenience
+GitHub
+prime-environments/configs/endpoints.py at main · PrimeIntellect-a...
+Training-Ready RL Environments + Evals. Contribute to PrimeIntellect-ai/prime-environments development by creating an account on GitHub.
+prime-environments/configs/endpoints.py at main · PrimeIntellect-a...
+we can improve the logging
+Autumnn — 8/27/25, 11:24 PM
+thank bro
+will
+ pinned a message to this channel. See all pinned messages. — 8/27/25, 11:27 PM
+daniel — 8/27/25, 11:27 PM
+i wish i had seen this earlier but oh well 🤣
+daniel — 8/27/25, 11:34 PM
+oh i think i remember what the issue was. my folder and file structure was fucked up and i tried to env push but there wasnt a .py file it and still asked for vf_* which gave me the impression that it needs this. probably works if the files/folder structure is correct.
+wazupsteve
+[CL]
+ — 8/28/25, 8:33 AM
+@will just to confirm 
+-c is BATCH_SIZE right? ( in vf-eval ) 
+couldnt find in docs
+blueberry — 8/28/25, 9:01 AM
+yes! that is correct
+will — 8/28/25, 9:50 AM
+asynchronous batch size yes (semaphore limit)
+will — 8/28/25, 9:50 AM
+should be fixed if you do uv tool install -U prime
+scagria
+[BIO]
+ — 8/28/25, 9:54 AM
+@candyflip69 you can send it again
+candyflip69 — 8/28/25, 10:03 AM
+how can i install from git URL? if i have balrog @ git+https://github.com/balrog-ai/BALROG.git in pyproject.toml and push it, i am getting following error when trying to install.
+Failed to resolve dependencies for balrog-prime (v0.1.0)
+  ╰─▶ Package balrog was included as a URL dependency. URL dependencies
+      must be expressed as direct requirements or constraints. Consider
+      adding balrog @ git+https://github.com/balrog-ai/BALROG.git to your
+      dependencies or constraints file.
+
+
+can i do runtime install? i not able to build a wheel and pushing it to pypi for https://github.com/balrog-ai/BALROG.git   because it has dependencies installed from urls and so does the dependencies  of it. if i build wheel and push recursively, it will be a nightmare to maintain.
+Sinatras — 8/28/25, 2:03 PM
+Hello Johannes, yesterday i sent a simple purposal via direct message on the topic as i dont need compute grant, please check it so i can prioritize it over the weekend
+alexine — 8/28/25, 2:17 PM
+@will  hey!  for the scicode environment whose tests rely on an external HDF5 for numeric targets, what’s the right way to handle that so it works in eval? 
+will — 8/28/25, 3:06 PM
+great q, generally i’d recommend at least including a setup script in the env for the target, and best if it’s possible to have it triggered at the start of load_environment (ideally only running expensive operations once + caching results locally)
+alexine — 8/28/25, 3:12 PM
+oh i forgot to mention, its hosted on Google Drive, imo access(with like gdown) is pretty terrible :/ 
+tikwurp — 8/28/25, 3:31 PM
+can't seem to load certain environments like terminal-bench or browsecomp-openai but can load others like nyt-connections and lisanbench load fine with the instructions given on the Hub 
+following the exact same steps
+not sure what's the issue here 
+even though the python env has those packages in the .vev/bin/
+MadBonze
+[UnAI]
+ — 8/28/25, 5:19 PM
+I have an environment that takes these args:
+def load_environment(
+    kind: Literal["train", "test"] = "test",
+    num_train: int = 10000,
+    num_eval: int = 1000,
+    num_test: int = 1000,
+    use_think: bool = True,
+)
+
+It is runnig perfectly with this command:
+uv run vf-eval clutrr -m my-model -n 3 -r 2
+
+But giving error with this:
+uv run vf-eval clutrr -m my-model -n 10 -r 2 -a '{"kind": "test", "num_test": 10, "use_think": true}'
+
+The error is:
+vf-eval: error: argument --env-args/-a: invalid loads value: '{kind: test, num_test:10, use_think:true}'
+
+What can be the reason for this?
+Also, the when I run with "-n 3", I only get for 3 samples, not the 1000 value that is set as default for num_test. So -n is probably overwriting over my num_test arg anyway. Why is this and can this be the reason for my error?
+oso — 8/28/25, 7:33 PM
+Does true in the dict need to be capitalized?
+oso — 8/28/25, 7:34 PM
+Why not just drop the -n flag if you have a custom arg?
+Ohad Rubin — 8/28/25, 8:57 PM
+Hello, I have a question, what if the environment I want to contribute has a need for compaction/ summarization. 
+Does your hub setup have anything built in for that?
+Johannes — 8/28/25, 10:00 PM
+I’ll check what this could be!
+we will also add a tag for each env on the hub in the next couple days which shows if the environments properly loads or not to make it more obvious which environment is still work in progress
+tikwurp — 8/28/25, 10:01 PM
+thanks a lot! also made an issue with reproduction steps, if that helps!
+https://github.com/PrimeIntellect-ai/prime-environments/issues/82 
+will — 8/28/25, 10:15 PM
+not yet, we've been holding off on this for now because it doesn't yet work seamlessly with the RL trainers, but we definitely want to support it soon + have a roadmap for how to enable it 🙂
+will — 8/28/25, 10:17 PM
+top priority of ours to address! basically needs a CI lightweight system so we can flag envs as confirmed functional, rollout out sandboxes now which will make doing this much easier
+Goliath — 8/28/25, 10:18 PM
+thanks, could you check if the latest version of https://app.primeintellect.ai/dashboard/environments/ibrahim/terminal-bench-beta gives you that error on your environment? i couldnt replicate it with:
+uv run prime env install  ibrahim/terminal-bench@0.1.3
+uv run python
+Python 3.12.9 | packaged by Anaconda, Inc. | (main, Feb  6 2025, 18:56:27) [GCC 11.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from verifiers import load_environment
+env = load_envir>>> env = load_environment("terminal-bench")
+>>> 
+tikwurp — 8/28/25, 10:26 PM
+yes this environment works! I think the code snippet you sent is not correct because it's for the non beta version? 
+if i do
+
+$ uv run prime env install ibrahim/terminal-bench-beta@0.2.2
+$ python
+>>> from verifiers import load_environment
+>>> env = load_environment('terminal-bench-beta')
+
+this works 🤔 
+tikwurp — 8/28/25, 10:27 PM
+thanks a lot! what makes the RL envs not functional? even if they seem to be installed in the venv 
+Goliath — 8/28/25, 10:29 PM
+ok i pushed v0.2.2 i think it was probably related to the includes in the pyproject.toml not exposing the file that had load_environment
+will — 8/28/25, 10:30 PM
+whether or not load_environment runs without errors mostly, which installing doesn’t check
+tikwurp — 8/28/25, 10:31 PM
+oh I see. could i help add this functionality to the CI?  if  it's not too much overhead 
+tikwurp — 8/28/25, 10:32 PM
+this is the beta or the non beta terminal-bench?
+Goliath — 8/28/25, 10:32 PM
+pushed it to the non beta https://app.primeintellect.ai/dashboard/environments/ibrahim/terminal-bench
+will — 8/28/25, 10:35 PM
+CI is part of our whole web app backend which isn't easy to contribute to really, private repo
+
+internally have been discussing which pieces of the stack we can cleanly make open-source, def wanna do something around an oss sandbox orchestration layer, but unlikely to be our entire web app sorry haha
+tikwurp — 8/28/25, 10:37 PM
+no worries, i understand. the oss sandbox  sounds awesome, might also be helpful for envs that need to be run inside a container. would be very happy to contribute there once it's public! thanks
+Johannes — 8/28/25, 10:38 PM
+we would definitely needs this in the CI for our prime-environments repo here too tho, so we dont merge envs into it that dont load: https://github.com/PrimeIntellect-ai/prime-environments
+you could definitely contribute there! 🙏
+Goliath — 8/28/25, 10:38 PM
+yeah i think modifying push here too could be a smart idea https://github.com/PrimeIntellect-ai/prime-cli/blob/main/src/prime_cli/commands/env.py 
+will — 8/28/25, 10:38 PM
+yeah! for current oss sandbox tools, you'd likely wanna consider e2b or bytedance's sandboxfusion
+Goliath — 8/28/25, 10:38 PM
+pull() auto invoking load_environment() could be a minor security risk
+tikwurp — 8/28/25, 10:39 PM
+aweosme, i can take this this up
+MadBonze
+[UnAI]
+ — 8/29/25, 1:10 AM
+nope thats not it. it expects a json of args, json has true in lowercase. tried with capital as well anyway
+MadBonze
+[UnAI]
+ — 8/29/25, 1:10 AM
+to make sure the code works.
+MadBonze
+[UnAI]
+ — 8/29/25, 1:10 AM
+tried with other envs  as well. Can it be a windows issue?
+Image
+lazyg — 8/29/25, 2:37 AM
+Yes! I faced the same errors on windows but not on bash
+Can you try escaping your double quotes with a backslash
+That should work
+MadBonze
+[UnAI]
+ — 8/29/25, 3:15 AM
+It worked thanks.
+Luigi Pagani — 8/29/25, 3:57 AM
+I would like to start working on environmets for books, for example scaling your model. In the prompt, do you think I also should include the text of the chapter (so the theory) the problem is extracted from or not?  Including the theory would let us isolate pure reasoning, while not including would means also rewarding good recall/memory. For advanced math books I think you csn't go without chapters because defitions and conventions are too specific 
+alexine — 8/29/25, 4:05 AM
+wanted to do the same but I saw this message this morning ⁠environment-hub-beta⁠
+Luigi Pagani — 8/29/25, 4:51 AM
+I am now working on the Aidanbench environment PR, hope to delvier this weekend
+Ohad Rubin — 8/29/25, 5:25 AM
+Anyway, i'm working on a benchmark that gets LLMs to assemble and create redstone contraptions (they have to collect the materials first) and I estimate it will take models several hours to complete it (I'm basing this estimation on 'claude plays pokemon'), so it will be really nice to have some widely used harness for compaction.
+Autumnn — 8/29/25, 7:59 AM
+I am a civil engineer with no background in IT or AI. I spent 6 nights just to set up the environment, troubleshooting each error one by one until I learned how to purchase and use the OpenAI API—with tremendous support from ChatGPT. Thank you, @will
+Image
+bruno — 8/29/25, 11:59 AM
+hi everyone. wanted to know if anyone has seen something like this and what did you do to solve it. I'm porting ACEBench and the original has lots of different cases, each one with (sometimes subtle, sometimes not) differences on parsing and/or rubrics. I implemented each major case as a single env to help me understand each one (and to use AI more efficiently)
+
+now i'm packing up the env to open the PR to review, and i'm not sure if this is the best way to do it. I think i could easily merge acebench_normal_* (maybe even with the special case together) but i'm not so sure about acebench_agent_* ones. 
+
+i'd be really happy with any help or input on this! i'm currently thinking of merge normal and special together but don't know what to do with the agent ones. 
+
+may be valid to consider that one could want to train/eval just on one or another case, they benchmark different things (even tho all of them are roughly benchmarking tool-use) 
+Image
+bruno — 8/29/25, 12:14 PM
+from their paper: 
+
+>"Normal" evaluates tool usage in basic scenarios; "Special" evaluates tool usage in situations with ambiguous or incomplete instructions; "Agent" evaluates tool usage through multi-agent interactions to simulate real-world, multi-turn dialogues.
+mauri — 8/29/25, 12:24 PM
+I'm not the best for review since I haven't written an env (yet), but I would recommend sharing the branch here so others can get an idea of the current code structure. It's hard to make suggestions based only on filenames.
+bruno — 8/29/25, 12:31 PM
+appreciate the suggestion! https://github.com/ob1-s/prime-environments/tree/add-acebench-env
+each env shares a lot of common code! 
+dhruvrnaik — 8/29/25, 4:56 PM
+@will The convert_func_to_oai_tool util in verifiers is quite limited -> it does not create the right json schema for complex type hints.
+
+example:
+List[str] or list[str] gets turned into "type": "string", when it should be "type": "array", "items": {"type": "string"}.
+
+In my draft, I am going around this by explicitly writing the  json schema, but I don't think that is good solution.
+
+agents-sdk has a good function_schema util, could we use that directly in the verifiers implementation for ToolEnv?
+
+My PR: https://github.com/PrimeIntellect-ai/prime-environments/pull/75/files#diff-ef3d5dba56fc2ee6a6ad23217e59ee505f73c55fd08e343ded18daafb4410f47R155
+
+agents sdk imp: https://github.com/openai/openai-agents-python/blob/de9d1fd0c4a99578be85d76a6a623e6a065af85c/src/agents/function_schema.py#L188 
+will — 8/29/25, 5:03 PM
+ah, good thing to flag, thanks. for now, you could use the openai-agents sdk to create the proper schema and override? generally hesitant to introduce new dependencies but this may be a good justification for doing so (i know some people use langchain for this, but that's so heavyweight of an import, agents-sdk should be more minimal)
+dhruvrnaik — 8/29/25, 5:04 PM
+Doing something like
+from agents.function_schema import function_schema
+
+function_schema_obj = function_schema(search_inbox)
+
+schema = {
+    "name": function_schema_obj.name,
+    "description": function_schema_obj.description,
+    "parameters": function_schema_obj.params_json_schema,
+    "strict_json_schema": function_schema_obj.strict_json_schema,
+    "type": "function",
+}
+
+
+Also found https://github.com/comfuture/function-schema, but was not as flexible as agent-sdk
+will — 8/29/25, 5:04 PM
+e.g.
+
+env = vf.ToolEnv(tools=tools, ...)
+env.oai_tools = [function_schema(tool).model_dump() for tool in tools]
+dhruvrnaik — 8/29/25, 5:06 PM
+yup, agreed. Another option would be to copy the core logic of the util to verifiers (with ack) and avoid new dependencies.
+will — 8/29/25, 5:10 PM
+agents deps aren't bad at all, mostly stuff we already have directly or indirectly
+
+    "openai>=1.102.0,<2",
+    "pydantic>=2.10, <3",
+    "griffe>=1.5.6, <2",
+    "typing-extensions>=4.12.2, <5",
+    "requests>=2.0, <3",
+    "types-requests>=2.0, <3",
+    "mcp>=1.11.0, <2; python_version >= '3.10'",
+lazyg — 8/29/25, 6:09 PM
+huge +1 on hesitancy around introducing Langchain as a dependency. I’ve been a LC user since early 2023 and while it has its pros, I feel it’s not suited as a dependency in other projects because it’s so vast
+Autumnn — 8/29/25, 7:20 PM
+I have pushed my data to Hugging Face, how can I share my data?
+Autumnn — 8/29/25, 11:51 PM
+https://huggingface.co/datasets/Tonyteo79/wordle-evals              my Data @will
+bruno — 8/30/25, 12:49 PM
+would be really cool to have env collections on the hub, kind of like huggingface collections. @Johannes curious if this is on the roadmap?
+Johannes — 8/30/25, 12:50 PM
+yess for sure!
+Ljubomir Josifovski — 8/30/25, 1:48 PM
+Hi everyone - I added futurex_past dataset https://huggingface.co/datasets/futurex-ai/Futurex-Past , following semi-blindly the https://github.com/PrimeIntellect-ai/prime-environments instructions.
+Ljubomir Josifovski — 8/30/25, 3:37 PM
+...I saw the test run 5 examples x 3 roll outs = 15 total, but the whole set has not been run. (was weary I'll use up my OAI allowance) The set is only 851 rows. I thought I'd try local using glm-4.5-air or qwen3-30b-a3b. But thought I better ask - how do other people test? (I got some PI credits available)
+bruno — 8/30/25, 4:33 PM
+you can spin up a GPU instance and run a vllm server on it through ssh. it's pretty straightforward once you get used to it. still learning myself, but would be happy to help over DMs if you have any questions
+Ljubomir Josifovski — 8/30/25, 4:34 PM
+thanks! - will try tomorrow, run out out of time today, night-night 🙂
+lazyg — 8/30/25, 5:51 PM
++1; you can spin up 2x 4090 and have Qwen3-4B running on it
+https://github.com/PrimeIntellect-ai/prime-rl
+Use the easy install script to have everything set up when you ssh into the cluster on PI. Then you can run 
+uv run inference @ <path>.toml
+Sinatras — 8/30/25, 6:06 PM
+StepFunProver implementation is finally done will clean things up and refactor PR for visuals, but yea async container calls/rubrick and running lean was painful with bunch of race conditions till now but fixed from now on. As the problem of this env is really hard uploaded results will be lower than what initially can be expected but even 
+deepseek-prover-v2
+ cannot fix most of the lean4 problems within dataset (pretty pricey to run since iterations over env run/feeback consume a lot tokens). Which is goodnews on the side which means there is headroom for RL to improve this domain clearly 📈
+Image
+wazupsteve
+[CL]
+ — 8/30/25, 10:30 PM
+nice 
+i used vllm serve with the help of the endpoints.py  file
+use tmux , split terminals and test : )
+was super reliable
+Manan
+[GPU]
+ — 8/30/25, 10:55 PM
+Hey this is in regarding to paper bench:
+according to official paper and github, The agent not only has access to simply a sandbox but a whole vm in which it can run separate docker containers and root access and possibly gpu. I was looking at current arc agi tool implemnetation of sandbox and it wont be enough for the environment. Any way for it?
+will — 8/31/25, 3:17 AM
+yeah this is tricky, you’re welcome to skip any sub calls to docker for now, neither us nor any of the other sandbox offerings i’m familiar with has great support for it afaik
+in this case a simplified version of the bench is totally fine
+Manan
+[GPU]
+ — 8/31/25, 3:23 AM
+hey actually ended up building a version which spins up a pod instead of sandbox by looking at the api and commands implementations and execute commands/folder upload/download using ssh/scp. Is that fine as well? 
+alexine — 8/31/25, 3:24 AM
+@will not sure if you got the notif, could you check my PR (scicode)?
+will — 8/31/25, 3:30 AM
+totally cool!
+will — 8/31/25, 3:30 AM
+yes thanks for bump, will take a look!
+LuigiPagani — 8/31/25, 4:53 AM
+@will  I also have a PR for AidanBench, on a subset of questions I reproduce around same score reported by the paper on 4o mini
+will — 8/31/25, 4:55 AM
+Can you put it up on prime-environments? Lots of PRs to review, working through em 🙂 prioritizing those which follow all the guidelines mentioned (see other PRs) and for which a bounty had been promised
+(saw it was on verifiers; we have another repo for collecting envs, you can also just upload on the Hub without needing a PR)
+LuigiPagani — 8/31/25, 4:57 AM
+Yes already moved on the new repo, no rush! 
+I just want to reward hack big model smell
+will — 8/31/25, 5:28 AM
+added some comments!
+Manan
+[GPU]
+ — 8/31/25, 6:19 AM
+hey is there any way to ensure the rubrics are evaluated in a particular order for a group??
+and maybe some groups in parallel, is groups of groups supported
+?
+bruno — 8/31/25, 10:45 AM
+RubricGroup rubrics are already processed sequentially (in the order you defined them), is that what you meant?
+
+https://github.com/willccbb/verifiers/blob/4daa4b39e879de5d8988deb1a413f3411412b40c/verifiers/rubrics/rubric_group.py#L60
+bruno — 8/31/25, 10:49 AM
+within a Rubric the rewards are processed in parallel by default. not sure about parallel groups tho. 
+
+ is groups of groups supported
+yes, it is. but afaik within each RubricGroup the rubrics will still be processed sequentially
+Manan
+[GPU]
+ — 8/31/25, 10:49 AM
+Hey thanks I was looking for more like of you imagine a tree of rubrics then level order traversal witch each level processing together ( using parallel judge llm calls ) is that possible?
+bruno — 8/31/25, 10:52 AM
+i don't think it's possible natively, but you could create a custom RubricGroup class
+Luc — 8/31/25, 11:23 AM
+Hi guys, I'm working on the wiki-race env, and needed some advice!
+
+It's for the bounty on the wikibench benchmark which has this scoring methodology from the blog: 
+"
+Scoring
+I decided on golf scoring — the lower the score/more efficent the path, the better. Each click or path step counted as a point. Theoretically a model that gets from bradawl to Kevin Bacon in 5 clicks, and describes this path perfectly, gets a score of 5. To account for Wikipedia editorial oversight and model psychology, we apply a series of sliding-scale penalties and modifiers to the final score:
+   
++10 for an invalid path (link to step B is not mentioned in article A)
++5 for invalid path with mention to account for Wikipedia editorial oversight.
+
+For example, the article for Screwdriver mentions the United States by name, but doesn’t link to the article itself even though it probably should. A human wouldn’t make that mistake and assume it could click a nonexistent link, so it deserves a penalty, but Wikipedia isn’t perfect and we can partially reward the model’s ability to recognize that connection.
+    
++7 for invalid path, conceptually related but not mentioned, for non-tool use models; e.g., bradawl doesn’t link to carpentry, but it does to carpenter.
++6 for if the model hits a length limit but has a valid path to that point.
++15 for giving up. Wikipedia is a connected graph; a valid solution does exist.
++20 for cheating. Only one model did this! (Can you guess which one?)
+-1 for a particularly creative valid connection; i.e., a leap that no other models made.
+"
+
+In the instructions for completing evals it says to be pretty strict about following the original scoring methods, a lo of these don't really seem conducive with how verifiers rewards work.
+
+For example it rewards creativity by comparing outputs from multiple different models running on the eval, that's not really possible. 
+
+How much do i need to follow their implementation/scoring? Is it fine to not do golf scoring but convert it to a more standard scoring system with how other verfiers env do things? With this bounty on the excel sheet i was also linked to 'hugginface/wikirace-llms' which does a diffren't format of showing the model links and getting it to pick one rather than guessing a chain based on the starting article (which seemed more appealing to me) but the two sources have such diffren't implementations I'm not sure how much creative freedom I have? Should I use the wikibench blog as the way I NEED to do it? 
+
+Sorry for rambling, and thanks for any help/advice! 
+Sinatras — 8/31/25, 12:29 PM
+Hello, finalized https://app.primeintellect.ai/dashboard/environments/sinatras/stepfun-prover there is a issue while pushing the dockerfile, its not getting pushed via  
+prime env push
+ any tips on it ? its already in pyproject file
+tikwurp — 8/31/25, 12:32 PM
+I added this functionality and made a PR for this 
+https://github.com/PrimeIntellect-ai/prime-environments/pull/91
+Johannes — 8/31/25, 12:41 PM
+sick! will take a look in a sec!
+alexine — 8/31/25, 2:25 PM
+@will  made the changes on the PR, should be good now. also, I ran into a bug along the way, so I opened a PR for verifiers (tui) as well 
+Big sol — 8/31/25, 2:46 PM
+So what's good
+bruno — 8/31/25, 3:46 PM
+it would also be nice if the hub's code explorer had a "copy permalink" feature like in github, it'd make sharing code easier, esp. for envs with lots of LOCs;
+
+and on the hub's main page, i think if we had a way to sort envs (e.g. by creation time) would really help on discoverability
+
+tagging @Johannes in case this is useful
+MadBonze
+[UnAI]
+ — 8/31/25, 3:46 PM
+Hey,
+I made PRs for a few multilingual evals on the github. Right now I have added the languages supported in the README. I was thinking can we add language filters on the hub or alternatively should I add all languaages as tags?
+oso — 8/31/25, 3:53 PM
+hey all, if anyone was using the homoglyph corruption tool i shared earlier, i've made some updates to the logic as well as added another type of corruptor (typos on a QWERTY keyboard), with more to come. have fun, meet the glitchlings: https://github.com/osoleve/glitchlings
+bruno — 8/31/25, 3:59 PM
+btw, i think the evals page's table sort is not working. it works for model but not for avg reward or run date
+Image
+uuuh just notice run date is showing the date/hour i pushed to the hub, not the eval run's itself. is that right? @Johannes (not sure who to ping)
+Johannes — 8/31/25, 5:21 PM
+great feedback, shared it with the team! we will incorporate this over the next week!
+Johannes — 8/31/25, 5:26 PM
+yess that's right
+this will improve soonish because we will add a way that it automatically runs evals for most envs for a selected range of models when you push it to the hub. we had quite a few inference providers reach out that were interested in doing this with us.
+bruno — 8/31/25, 5:27 PM
+good to know!
+Luc — 9/1/25, 1:54 AM
+Please lmk if anyone has an answer to this! I have some free time tm bc of Labor Day and would love to finish it up 🙂 
+Mika — 9/1/25, 1:59 AM
+hey luc! can you send me a concise bullet pointed list of the open questions that you have via dm, then we can take it from there?
+Manan
+[GPU]
+ — 9/1/25, 5:39 AM
+hey any reference as to what should we use for a web browser tool?
+for computer use
+click refresh scroll etc.
+Mika — 9/1/25, 5:45 AM
+im not sure myself, @will might have opinions
+will — 9/1/25, 11:18 AM
+browserbase/stagehand and browser-use are probably best options 
+browser-use if you want self-hosted
+browserbase for API
+Sinatras — 9/1/25, 11:23 AM
+Hello Will, StepFunProver is ready on PR there is a small issue with pushed env which i mentioned here do you have any tips on fixing it ?
+will — 9/1/25, 11:23 AM
+totally flexible on scoring system for edge cases here + creative freedom, will trust your judgment, deviate from wikibench blog as much as needed. 
+
+in general, I'd avoid trying to be too clever with rewarding for "partial credit". fine to give a 0 if a model doesn't give a valid path. ideally the model can explore incrementally, ie it always can see the list of valid outgoing links from its current page, and thus wouldn't need to "guess a perfect path"
+Goliath — 9/1/25, 11:56 AM
+prime-environments main branch fails the tests unfortunately, noticed it when i was updating my fork 
+lazyg — 9/1/25, 11:56 AM
++1, letting it figure out based on new knowledge on every click is a better bench
+Luc — 9/1/25, 3:11 PM
+That’s how I have it set up, it sees a list of links available and chooses one then gets the next sets of links from chosen page in a multi turn fashion, I’ll take ur advice on partial rewards and tweak it a bit and submit it then, thanks Will!
+will — 9/1/25, 5:51 PM
+ah yeah we aren't really intending for full test coverage/enforcing passing there, it's somewhat useful to see issues but not something we're actively maintaining
+kris
+[PUFF]
+ — 9/1/25, 9:25 PM
+hi @will what's with open bounties on textbooks? What do we have to do exactly? Scrape the entire book to generate Q&A or only questions that are at the end of each chapter?
+Johannes — 9/1/25, 10:44 PM
+hi @kris, check the convo up here regarding the textbook bounties 🙂
+lazyg — Yesterday at 6:59 PM
+What’s the smallest model that I can reliably use for random experiments? Does qwen3-8b suffice? And if so, What’s the recommended cluster setup? I would like to RL train a model and start experimenting
+Mika — 12:48 AM
+we have done most of our smaller experiments on qwen3-1.7b or qwen3-8b, if you have the compute 8b is usually more stable and more fun to play with. if you dont want to do crazy ctx size, a single node should suffice
+Manan
+[GPU]
+ — 1:24 AM
+Hey how to use custom api keys and base url annd model name while running vf-eval struggling with it for a day!
+Sinatras — 3:37 AM
+uv run vf-eval stepfun_prover \
+  -b https://openrouter.ai/api/v1 \
+  -k OPENROUTER_API_KEY \
+  -m deepseek/deepseek-prover-v2
+
+
+Like this modify env name, base url, api key in env variable and model name 
+Manan
+[GPU]
+ — 8:17 AM
+Thankyou so much! any way to get a model running to test it out? do i have to deploy a vllm instance on thew portal?
+Mika — 9:54 AM
+you can choose to hit an api model via your fav provider or self-host. if self-hosting, prime compute + vllm is a good choice:)
+officespace — 10:51 AM
+Hi all, I'm working on a simple xgboost trainer env. https://gist.github.com/stangirala/847e3de99b47dc335657bae8d867577f
+
+Looking at the wikipedia search example from the repo, this gist code is,
+Creating a tool evaluate_params to train an xgb model and emit metrics.
+Calls a gpt 4.1 judge using the judge rubric to test out the dataset prompt Has the metric for dataset improved, regression-data-set1?.
+
+I'm still figuring out the dataflow for the verifiers/environments package. I wanted to check if this gist looks good or if I've misunderstood something with the interaction protocol.
+
+From the lib code, I'm not able to figure out how we can save state across different runs of the tool. I don't think I saw an example of ‎StatefulToolEnv in the repo. Seems like multi-turn env might be the way here. 
+
+cc @will
+dmnsh001 — 1:09 PM
+@Johannes would it suffice to get the problems in .csv format (columns: book, chapter, problem_number, problem_statement) from a huggingface table? I used grok to give me the .md format of problems in the book so then I  check and can convert to .csv and put on huggingface to be loaded on an env. 
+Image
+wazupsteve
+[CL]
+ — 1:28 PM
+hey i think this textbook was already locked as a PR last week itself
+check pull requests:
+https://github.com/PrimeIntellect-ai/prime-environments/pull/80
+dmnsh001 — 1:31 PM
+that's fine, my question is about the methodology
+wazupsteve
+[CL]
+ — 1:31 PM
+ah okay : )
+the textbook info is still marked as ( soon ) on the bounty sheet
+so was waiting for the same info 
+lazyg — 3:00 PM
+I think you’ll also need the answer field, but other than that, I think it should be a  good starting point for Q/A environments initially
+will — 4:05 PM
+Don’t have a ready-to-go example of StatefulToolEnv, soon, but that + overriding setup_state in MultiTurnEnv is what I’d suggest!
+bruno — 4:38 PM
+@officespace i've tried exactly what Will suggested with setup_state. feel free to take a look at the code if you're interested, it might help with your case.
+
+https://github.com/ob1-s/prime-environments/blob/d93ffba88241a8e77932d634476dfdc6892d1c81/environments/acebench_agent_multistep/acebench_agent_multistep.py#L200
+dhruvrnaik — 7:50 PM
+@will this PR is ready for review - https://github.com/PrimeIntellect-ai/prime-environments/pull/75

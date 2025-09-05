@@ -6,6 +6,9 @@ import sys
 import traceback
 from pathlib import Path
 
+# Add project root to Python path for script imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 def test_environment():
     """Test environment loading and basic functionality."""
     print("=" * 60)

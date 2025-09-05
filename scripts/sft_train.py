@@ -116,11 +116,9 @@ def main():
     args = ap.parse_args()
 
     # Load model/tokenizer (fallback to transformers if verifiers API is absent)
-    try:
-        get_mat = getattr(vf, "get_model_and_tokenizer", None)
-    except Exception:
-        get_mat = None
-    if callable(get_mat):
+    # TEMPORARY FIX: Force fallback to avoid FlashAttention2 requirement
+    get_mat = None  # Force use of direct transformers loading with SDPA
+    if False:  # Disable verifiers loading temporarily
         model, tokenizer = get_mat(args.model)
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True, trust_remote_code=True)

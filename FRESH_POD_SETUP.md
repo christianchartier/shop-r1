@@ -118,8 +118,8 @@ vf-install shop-r1
 # 9. Fix import issues
 touch scripts/__init__.py
 
-# 10. Apply FlashAttention2 fix
-echo "=== Applying FlashAttention2 Fix ==="
+# 10. Apply FlashAttention2 and DataCollator fixes
+echo "=== Applying SFT Training Fixes ==="
 python scripts/fix_flash_attention.py 2>/dev/null || python << 'PYTHON_FIX'
 import re
 
@@ -151,10 +151,24 @@ if 'attn_implementation' not in content and re.search(pattern2, content):
     content = re.sub(pattern2, add_attn_impl, content)
     print("✓ Patched fallback AutoModelForCausalLM to use SDPA")
 
+# Fix data collator for tensor size mismatch
+if 'DataCollatorForSeq2Seq' not in content:
+    # Replace default_data_collator import with DataCollatorForSeq2Seq
+    content = content.replace('default_data_collator,', 'DataCollatorForSeq2Seq,')
+    content = content.replace('default_data_collator', 'DataCollatorForSeq2Seq')
+    
+    # Update the collator instantiation
+    collator_pattern = r'collator = default_data_collator'
+    if re.search(collator_pattern, content):
+        content = re.sub(collator_pattern, 
+                        'collator = DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8)', 
+                        content)
+    print("✓ Fixed data collator for tensor size mismatch")
+
 with open('scripts/sft_train.py', 'w') as f:
     f.write(content)
 
-print("✓ FlashAttention2 fix applied successfully")
+print("✓ All SFT training fixes applied successfully")
 PYTHON_FIX
 
 # 11. Create test dataset
@@ -341,6 +355,8 @@ CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
 2. **FlashAttention2**: The setup automatically patches scripts to use SDPA attention instead of FlashAttention2, which is not available in the RunPod environment.
 
 3. **TRL Version Conflict**: The verifiers package may install an older transformers version that conflicts with TRL. Install TRL after all other packages to resolve.
+
+4. **SFT Tensor Size Mismatch**: Fixed - The setup now automatically patches the SFT training script to use DataCollatorForSeq2Seq instead of default_data_collator to handle sequences of different lengths.
 
 ## Summary
 

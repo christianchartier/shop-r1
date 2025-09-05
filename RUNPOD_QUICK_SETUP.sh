@@ -150,8 +150,8 @@ vf-install shop-r1
 echo "=== Fixing Script Issues ==="
 touch scripts/__init__.py
 
-# 11. Apply FlashAttention2 fix (force SDPA attention)
-echo "Applying FlashAttention2 fix..."
+# 11. Apply FlashAttention2 and DataCollator fixes
+echo "Applying SFT training fixes..."
 python << 'PYTHON_FIX'
 import re
 
@@ -185,11 +185,25 @@ if 'attn_implementation' not in content and re.search(pattern2, content):
     content = re.sub(pattern2, add_attn_impl, content)
     print("✓ Patched fallback AutoModelForCausalLM to use SDPA")
 
+# Fix data collator for tensor size mismatch
+if 'DataCollatorForSeq2Seq' not in content:
+    # Replace default_data_collator import with DataCollatorForSeq2Seq
+    content = content.replace('default_data_collator,', 'DataCollatorForSeq2Seq,')
+    content = content.replace('default_data_collator', 'DataCollatorForSeq2Seq')
+    
+    # Update the collator instantiation
+    collator_pattern = r'collator = default_data_collator'
+    if re.search(collator_pattern, content):
+        content = re.sub(collator_pattern, 
+                        'collator = DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8)', 
+                        content)
+    print("✓ Fixed data collator for tensor size mismatch")
+
 # Write back the fixed content
 with open('scripts/sft_train.py', 'w') as f:
     f.write(content)
 
-print("✓ FlashAttention2 fix applied successfully")
+print("✓ All SFT training fixes applied successfully")
 PYTHON_FIX
 
 # 12. Create test data

@@ -12,7 +12,7 @@ from transformers import (
     TrainingArguments,
     AutoTokenizer,
     AutoModelForCausalLM,
-    default_data_collator,
+    DataCollatorForSeq2Seq,
 )
 
 import verifiers as vf
@@ -140,8 +140,8 @@ def main():
     tokenizer.truncation_side = "left"
 
     ds = SFTJsonlDataset(args.dataset, tokenizer, max_seq_len=args.max_seq_len)
-    # Use default_data_collator so that labels/attention_mask are padded consistently
-    collator = default_data_collator
+    # Use DataCollatorForSeq2Seq to handle padding of sequences with different lengths
+    collator = DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8)
 
     targs = TrainingArguments(
         output_dir=args.output_dir,

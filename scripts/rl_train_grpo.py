@@ -12,7 +12,8 @@ def main():
     # Environment args (paper defaults)
     ap.add_argument("--strict", action="store_true", help="Strict schema enforcement during RL rollouts")
     ap.add_argument("--sim_threshold", type=float, default=0.75)
-    ap.add_argument("--alpha", type=float, default=0.13, help="Rationale weight (w_rationale)")
+    # Paper fidelity: alpha ≈ 0.005 for rationale term in RL objective
+    ap.add_argument("--alpha", type=float, default=0.005, help="Rationale weight (w_rationale)")
     ap.add_argument("--beta", type=float, default=0.001, help="KL penalty coefficient")
     ap.add_argument("--dars_factor", type=float, default=1000.0)
     # Training args (paper-like)
@@ -77,6 +78,17 @@ def main():
     tr_args.gradient_accumulation_steps = args.grad_accum
     tr_args.max_seq_len = args.max_seq_len
     tr_args.temperature = args.temperature
+    # Ensure logprobs/top_logprobs are requested for self-certainty; enforce JSON object shape
+    try:
+        tr_args.sampling_args = {
+            "temperature": args.temperature,
+            "max_tokens": 160,
+            "logprobs": True,
+            "top_logprobs": 5,
+            "response_format": {"type": "json_object"},
+        }
+    except Exception:
+        pass
     tr_args.beta = args.beta
     # Avoid moving a model that may have accelerate/deepspeed hooks; let the launcher place it
     try:

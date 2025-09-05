@@ -40,55 +40,66 @@ python scripts/sft_train.py \
 ls -la checkpoints/test_sft/
 ```
 
-## Step 4: Test GRPO (Optional - Requires 2 GPUs)
+## Step 4: Test GRPO (Optional — 2 GPUs Recommended)
 
-**Note**: GRPO has known dataset iteration issues in the current environment. Skip to Step 5 (Evaluation) for more critical validation.
+Paper‑faithful settings: α=0.005, β=0.001, DARS=1000, temperature≈0.6, similarity threshold=0.75, strict JSON encouraged.
 
 ```bash
-# Install vLLM and wandb for GRPO
+# 4.1 Install vLLM and wandb
 python -m pip install "vllm==0.10.1.1" wandb
 
-# Create larger test dataset
-cat > data/test_large.jsonl << 'EOF'
-{"prompt": [{"role": "user", "content": "Search for laptop"}], "answer": {"type": "type_and_submit", "name": "search", "text": "laptop"}, "rationale": "Looking for a laptop"}
-{"prompt": [{"role": "user", "content": "Click add to cart"}], "answer": {"type": "click", "name": "add_to_cart"}, "rationale": "Adding to cart"}
-{"prompt": [{"role": "user", "content": "Done shopping"}], "answer": {"type": "terminate"}, "rationale": "Finished"}
-{"prompt": [{"role": "user", "content": "Search for headphones"}], "answer": {"type": "type_and_submit", "name": "search", "text": "headphones"}, "rationale": "Looking for headphones"}
-{"prompt": [{"role": "user", "content": "Click product link"}], "answer": {"type": "click", "name": "product_link"}, "rationale": "Checking product"}
-{"prompt": [{"role": "user", "content": "Add to wishlist"}], "answer": {"type": "click", "name": "wishlist"}, "rationale": "Saving for later"}
-{"prompt": [{"role": "user", "content": "Search for books"}], "answer": {"type": "type_and_submit", "name": "search", "text": "books"}, "rationale": "Looking for books"}
-{"prompt": [{"role": "user", "content": "End session"}], "answer": {"type": "terminate"}, "rationale": "Finished shopping"}
-EOF
+# 4.2 Create a small RL dataset (or bring your own)
+python environments/shop_r1/synthesize.py -o data/rl.jsonl -n 200 --seed 7
 
-# Terminal 1: Start vLLM server (in tmux)
+# 4.3 Terminal 1: Start OpenAI-compatible vLLM server (tmux)
 tmux new -s vllm
 # Inside tmux:
 cd /workspace/shop-r1 && source .venv/bin/activate
-CUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve \
+CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen2.5-0.5B-Instruct \
   --host 0.0.0.0 --port 8000 \
+  --dtype auto \
   --max-model-len 1024 \
-  --gpu-memory-utilization 0.20
-# Press Ctrl+B, then D to detach
+  --gpu-memory-utilization 0.60 \
+  --disable-log-requests \
+  --enforce-eager
+# Detach with Ctrl+B, then D
 
-# Terminal 2: Run GRPO (main terminal)
-sleep 15
+# 4.4 Terminal 2: Run GRPO with paper‑aligned knobs
+export OPENAI_API_KEY=EMPTY
+export OPENAI_BASE_URL=http://localhost:8000/v1
+
 CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
   --model Qwen/Qwen2.5-0.5B-Instruct \
-  --dataset data/test_large.jsonl \
-  --output_dir checkpoints/test_rl \
-  --max_steps 2 \
-  --save_steps 10 \
-  --eval_steps 10 \
+  --dataset data/rl.jsonl \
+  --output_dir checkpoints/rl_shop_r1 \
+  --strict \
+  --sim_threshold 0.75 \
+  --alpha 0.005 \
+  --beta 0.001 \
+  --dars_factor 1000 \
+  --temperature 0.6 \
   --per_device_batch_size 1 \
-  --num_generations 1 \
-  --grad_accum 1 \
+  --num_generations 8 \
+  --grad_accum 8 \
+  --max_steps 50 \
+  --save_steps 25 \
+  --eval_steps 25 \
   --max_seq_len 1024 \
   --learning_rate 1e-7
 
-# Clean up
+# 4.5 Clean up
 tmux kill-session -t vllm
 ```
+
+Notes
+- The training script now requests logprobs/top_logprobs and enforces JSON object responses for self‑certainty and format rewards.
+- Use two GPUs (one for server, one for trainer) to avoid memory contention. On a single GPU, reduce `--num_generations`, `--max_model_len`, or run smaller models.
+- If your dataset is larger, increase `--max_steps` and consider checkpointing frequency.
+- GPU assignment tips:
+  - `CUDA_VISIBLE_DEVICES=0` makes the process use physical GPU 0; `CUDA_VISIBLE_DEVICES=1` uses physical GPU 1.
+  - Inside the process, the visible device index starts at 0 regardless of mapping. Verify mapping via `echo $CUDA_VISIBLE_DEVICES`.
+  - Monitor usage with `watch -n 1 nvidia-smi` or `nvidia-smi -i 0,1 pmon -c 1` to see which PID is active on each GPU.
 
 ## Step 5: Run Evaluation (Most Important Test)
 

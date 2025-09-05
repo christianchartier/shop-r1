@@ -2,7 +2,7 @@
 
 ## Step 1: SSH into Fresh Pod
 ```bash
-ssh -p 1234 root@62.169.159.61
+ssh -p 1234 root@38.128.232.106
 ```
 
 ## Step 2: Run Complete Setup (Copy & Paste This Entire Block)
@@ -19,22 +19,33 @@ pwd
 
 # 2. Install Python 3.11 (required for verifiers)
 echo "=== Installing Python 3.11 ==="
-echo "Checking if Python 3.11 is already installed..."
-if python3.11 --version 2>/dev/null; then
-    echo "✓ Python 3.11 already installed!"
+if command -v python3.11 &> /dev/null; then
+    echo "✓ Python 3.11 already installed: $(python3.11 --version)"
 else
-    echo "Installing Python 3.11 (this takes 3-5 minutes with periodic progress dots)..."
-    apt update -qq
-    echo -n "Installing software-properties-common... "
-    apt install -y software-properties-common > /dev/null 2>&1 && echo "✓"
-    echo -n "Adding deadsnakes PPA repository... "
-    add-apt-repository -y ppa:deadsnakes/ppa > /dev/null 2>&1 && echo "✓"
-    echo -n "Updating package lists... "
-    apt update -qq && echo "✓"
-    echo -n "Installing Python 3.11 (longest step - up to 3 minutes)... "
-    apt install -y python3.11 python3.11-venv python3.11-dev > /dev/null 2>&1 && echo "✓"
-    python3.11 --version
-    echo "✓ Python 3.11 installation complete!"
+    echo "Installing Python 3.11..."
+    
+    # First try direct installation (often works on RunPod)
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        python3.11 python3.11-venv python3.11-dev python3.11-distutils \
+        2>&1 | grep -E "Setting up|Processing|Get:" || true
+    
+    # Check if successful
+    if command -v python3.11 &> /dev/null; then
+        echo "✓ Python 3.11 installed: $(python3.11 --version)"
+    else
+        # Fallback to deadsnakes PPA with timeout
+        echo "Using deadsnakes PPA..."
+        apt-get install -y software-properties-common
+        add-apt-repository -y ppa:deadsnakes/ppa
+        apt-get update -qq
+        timeout 120 apt-get install -y python3.11 python3.11-venv python3.11-dev
+    fi
+    
+    # Install pip if needed
+    if ! python3.11 -m pip --version &> /dev/null; then
+        curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+    fi
 fi
 
 # 3. Clone the repository (now public, no authentication needed)
@@ -61,8 +72,8 @@ python -m pip install -U pip setuptools wheel
 # Install verifiers first (has fewer conflicts)
 python -m pip install 'verifiers @ git+https://github.com/willccbb/verifiers@main'
 
-# Core PyTorch installation
-python -m pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118
+# Core PyTorch installation (using stable version for RunPod)
+python -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu118
 
 # Core ML packages in specific order to avoid conflicts
 python -m pip install "accelerate>=0.30"

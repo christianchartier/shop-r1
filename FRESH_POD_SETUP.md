@@ -73,9 +73,6 @@ python -m pip install \
     requests \
     openai
 
-# Install TRL separately (compatible with auto-upgraded transformers)
-echo "Installing TRL..."
-python -m pip install "trl>=0.11"
 
 # 6. Install uv package manager (for vf-install)
 echo "=== Installing uv ==="
@@ -110,6 +107,12 @@ EOF
 
 # 8. Install shop-r1 as editable package
 python -m pip install -e .
+
+# Install TRL after shop-r1 setup (must be after transformers is finalized)
+echo "Installing TRL..."
+python -m pip install "trl>=0.11"
+
+# Run vf-install
 vf-install shop-r1
 
 # 9. Fix import issues

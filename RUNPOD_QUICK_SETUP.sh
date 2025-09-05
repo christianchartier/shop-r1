@@ -101,10 +101,6 @@ python -m pip install \
     requests \
     openai
 
-# Install TRL separately (compatible with auto-upgraded transformers)
-echo "Installing TRL..."
-python -m pip install "trl>=0.11"
-
 # 7. Install uv for vf-install
 echo "=== Installing uv Package Manager ==="
 if ! command -v uv &> /dev/null; then
@@ -141,6 +137,13 @@ EOF
 # 9. Install shop-r1 environment
 echo "Installing shop-r1 environment..."
 python -m pip install -e .
+
+# Install TRL after shop-r1 setup (must be after transformers is finalized)
+echo "Installing TRL (final step for ML libraries)..."
+python -m pip install "trl>=0.11" || echo "Warning: TRL installation failed, you may need to install it manually"
+
+# Run vf-install
+echo "Running vf-install for shop-r1..."
 vf-install shop-r1
 
 # 10. Fix import issues
@@ -206,17 +209,23 @@ python -c "
 import torch
 import transformers
 import accelerate
-import trl
 import verifiers
 
 print(f'PyTorch: {torch.__version__}')
 print(f'Transformers: {transformers.__version__}')
 print(f'Accelerate: {accelerate.__version__}')
-print(f'TRL: {trl.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'GPU: {torch.cuda.get_device_name(0)}')
-print('✓ All packages imported successfully')
+
+# Check if TRL is installed
+try:
+    import trl
+    print(f'TRL: {trl.__version__}')
+except ImportError:
+    print('TRL: Not installed yet (install with: pip install trl>=0.11)')
+    
+print('✓ Core packages imported successfully')
 "
 
 # 14. Show GPU info

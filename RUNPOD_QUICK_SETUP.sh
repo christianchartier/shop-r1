@@ -138,11 +138,12 @@ EOF
 echo "Installing shop-r1 environment..."
 python -m pip install -e .
 
-# Install TRL after shop-r1 setup (must be after transformers is finalized)
-echo "Installing TRL (final step for ML libraries)..."
-python -m pip install "trl>=0.11" || echo "Warning: TRL installation failed, you may need to install it manually"
+# Pin validated versions for compatibility
+echo "Pinning transformers==4.56.1 and trl==0.21.0..."
+python -m pip uninstall -y transformers trl || true
+python -m pip install --no-cache-dir "transformers==4.56.1" "trl==0.21.0"
 
-# Run vf-install
+# Run vf-install (register env with current stack)
 echo "Running vf-install for shop-r1..."
 vf-install shop-r1
 

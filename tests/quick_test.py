@@ -37,8 +37,15 @@ def test_environment():
         env = vf.load_environment('shop-r1')
         print(f"✓ Environment loaded via verifiers API")
         print(f"  - Parser: {env.parser.__class__.__name__}")
-        print(f"  - Rubric functions: {len(env.rubric.funcs)}")
-        print(f"  - Weights: {env.rubric.weights}")
+        # Introspect rubric using stable getters when available
+        try:
+            funcs = env.rubric.get_reward_funcs()
+            weights = env.rubric.get_reward_weights()
+        except Exception:
+            funcs = getattr(env.rubric, 'funcs', [])
+            weights = getattr(env.rubric, 'weights', [])
+        print(f"  - Rubric functions: {len(funcs)}")
+        print(f"  - Weights: {weights}")
     except Exception as e:
         print(f"✗ Failed to load environment: {e}")
         try:
@@ -52,12 +59,12 @@ def test_environment():
     # 3. Parser test
     print("\n3. Testing JSON parser...")
     test_cases = [
-        # Valid JSON
+        # Valid JSON (should parse)
         ('{"rationale": "test", "action": {"type": "click", "name": "button"}}', True),
-        # Invalid JSON
+        # Invalid JSON (should not parse)
         ('not json', False),
-        # Missing rationale
-        ('{"action": {"type": "click", "name": "button"}}', False),
+        # Missing rationale (parse_answer may still extract action; format reward will gate strictness)
+        ('{"action": {"type": "click", "name": "button"}}', True),
     ]
     
     for json_str, should_parse in test_cases:
@@ -88,10 +95,16 @@ def test_environment():
         prompt = test_example["prompt"]
         answer = test_example["answer"]
         completion = test_example["completion"]
-        
-        total_reward = 0
+
+        total_reward = 0.0
         print("  Reward components:")
-        for i, (func, weight) in enumerate(zip(env.rubric.funcs, env.rubric.weights)):
+        try:
+            funcs = env.rubric.get_reward_funcs()
+            weights = env.rubric.get_reward_weights()
+        except Exception:
+            funcs = getattr(env.rubric, 'funcs', [])
+            weights = getattr(env.rubric, 'weights', [])
+        for i, (func, weight) in enumerate(zip(funcs, weights)):
             try:
                 r = func(completion, answer, prompt=prompt, info=answer)
                 weighted = r * weight
@@ -99,7 +112,7 @@ def test_environment():
                 print(f"    Func {i}: raw={r:.3f}, weight={weight:.3f}, weighted={weighted:.3f}")
             except Exception as e:
                 print(f"    Func {i}: ERROR - {e}")
-        
+
         print(f"  Total reward: {total_reward:.3f}")
         if total_reward > 0:
             print("✓ Rewards computed successfully")

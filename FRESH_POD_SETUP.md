@@ -18,6 +18,8 @@ chmod +x RUNPOD_QUICK_SETUP.sh
 ./RUNPOD_QUICK_SETUP.sh
 ```
 
+Note: The setup script automatically pins compatible Transformers/TRL versions and registers the environment.
+
 ## Step 3: Test SFT Training
 
 ```bash
@@ -125,7 +127,12 @@ export OPENAI_BASE_URL=http://localhost:8001/v1
 curl -s http://localhost:8001/v1/models | jq .
 
 # Run evaluation (IMPORTANT: must specify -b and -k flags)
-vf-eval shop-r1 -m Qwen/Qwen2.5-0.5B-Instruct -b http://localhost:8001/v1 -k EMPTY -n 5
+# Add logprobs/top_logprobs to enable self‑certainty; json_object improves formatting
+vf-eval shop-r1 \
+  -m Qwen/Qwen2.5-0.5B-Instruct \
+  -b http://localhost:8001/v1 -k EMPTY \
+  -S '{"logprobs":true,"top_logprobs":5,"temperature":0,"response_format":{"type":"json_object"}}' \
+  -n 5 -r 1
 
 # Clean up
 tmux kill-session -t eval
@@ -142,8 +149,10 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y python3.11 python3.11-venv pyt
 
 ### If TRL installation conflicts with transformers:
 ```bash
-# Install TRL with flexible version after transformers is settled
-python -m pip install "trl>=0.11"  # Will find compatible version
+# Use validated pins for compatibility
+pip uninstall -y transformers trl || true
+pip install --no-cache-dir "transformers==4.56.1" "trl==0.21.0"
+vf-install shop-r1
 ```
 
 ### If vLLM server fails to start:
@@ -166,7 +175,7 @@ CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
 
 2. **FlashAttention2**: The setup automatically patches scripts to use SDPA attention instead of FlashAttention2, which is not available in the RunPod environment.
 
-3. **TRL Version Conflict**: The verifiers package may install an older transformers version that conflicts with TRL. Install TRL after all other packages to resolve.
+3. **TRL/Transformers Conflicts**: The setup script pins compatible versions automatically. If you later change packages and hit conflicts, re-run the troubleshooting pin commands to restore transformers==4.56.1 and trl==0.21.0.
 
 4. **SFT Tensor Size Mismatch**: Fixed - The setup now automatically patches the SFT training script to use DataCollatorForSeq2Seq instead of default_data_collator to handle sequences of different lengths.
 
@@ -175,6 +184,7 @@ CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
 ✅ **Working Components:**
 - Python 3.11 installation
 - Shop-R1 repository setup
+- Verified pins: transformers 4.56.1; trl 0.21.0
 - SFT training pipeline
 - vLLM server setup
 - Evaluation framework

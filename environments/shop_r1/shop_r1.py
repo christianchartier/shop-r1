@@ -1043,7 +1043,12 @@ def load_environment(**kwargs) -> SingleTurnEnv:
     funcs = [_format_reward, _rationale_reward, _action_type_reward, _attribute_reward, _value_reward]
     weights = [cfg.w_format, cfg.w_rationale, cfg.w_type, 1.0, 1.0]
     
-    rubric = Rubric(funcs=funcs, weights=weights)
+    # Attach parser to rubric to align with newer verifiers API and avoid parser mismatch warnings
+    try:
+        rubric = Rubric(parser=parser, funcs=funcs, weights=weights)
+    except TypeError:
+        # Backward-compat for older Rubric signature without parser kwarg
+        rubric = Rubric(funcs=funcs, weights=weights)
 
     system_prompt = kwargs.pop(
         "system_prompt",

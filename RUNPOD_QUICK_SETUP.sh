@@ -92,16 +92,18 @@ python -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://downl
 echo "Installing verifiers..."
 python -m pip install 'verifiers @ git+https://github.com/willccbb/verifiers@main'
 
-# Install core ML libraries
+# Install core ML libraries (note: transformers will auto-upgrade from verifiers)
 echo "Installing ML libraries..."
 python -m pip install \
     "accelerate>=0.30" \
-    "transformers==4.44.2" \
-    "trl==0.21.0" \
     "peft>=0.11" \
     "datasets>=2.19" \
     requests \
     openai
+
+# Install TRL separately (compatible with auto-upgraded transformers)
+echo "Installing TRL..."
+python -m pip install "trl>=0.11"
 
 # 7. Install uv for vf-install
 echo "=== Installing uv Package Manager ==="
@@ -227,7 +229,10 @@ echo "✅ SETUP COMPLETE!"
 echo "========================================="
 echo ""
 echo "Environment ready at: $WORKSPACE/shop-r1"
-echo "Virtual environment activated: .venv (Python $PYTHON_VERSION)"
+echo ""
+echo "⚠️  IMPORTANT: Activate the virtual environment:"
+echo "   cd $WORKSPACE/shop-r1"
+echo "   source .venv/bin/activate"
 echo ""
 echo "Next steps:"
 echo "1. Test SFT training:"

@@ -1,98 +1,90 @@
-# 🚀 FRESH POD SETUP - Complete Instructions
+# 🚀 FRESH POD SETUP - Complete Working Instructions
 
 ## Step 1: SSH into Fresh Pod
 ```bash
-ssh -p 1234 root@38.128.232.106
+ssh -p 1234 root@[YOUR_POD_IP]
+
+# ============================================
+# ssh -p 1234 root@38.128.232.106
+# ============================================
 ```
 
-## Step 2: Run Complete Setup (Copy & Paste This Entire Block)
+## Step 2: Run Complete Setup Script
+
+**Option A: Download and Run Automated Script (Recommended)**
+```bash
+cd /workspace
+wget https://raw.githubusercontent.com/christianchartier/shop-r1/main/RUNPOD_QUICK_SETUP.sh
+chmod +x RUNPOD_QUICK_SETUP.sh
+./RUNPOD_QUICK_SETUP.sh
+```
+
+**Option B: Manual Step-by-Step Installation**
 
 ```bash
 # ============================================
-# COMPLETE SETUP FOR FRESH POD - RUN ALL AT ONCE
+# COMPLETE SETUP FOR FRESH POD - TESTED & WORKING
 # ============================================
 
-# 1. Check environment and go to workspace
-echo "=== Setting up Shop-R1 on Fresh Pod ==="
+# 1. Navigate to workspace
 cd /workspace || cd /ephemeral || cd ~
 pwd
 
-# 2. Install Python 3.11 (required for verifiers)
+# 2. Install Python 3.11 (if not already installed)
 echo "=== Installing Python 3.11 ==="
 if command -v python3.11 &> /dev/null; then
     echo "✓ Python 3.11 already installed: $(python3.11 --version)"
 else
-    echo "Installing Python 3.11..."
-    
-    # First try direct installation (often works on RunPod)
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        python3.11 python3.11-venv python3.11-dev python3.11-distutils \
-        2>&1 | grep -E "Setting up|Processing|Get:" || true
+        python3.11 python3.11-venv python3.11-dev python3.11-distutils
     
-    # Check if successful
-    if command -v python3.11 &> /dev/null; then
-        echo "✓ Python 3.11 installed: $(python3.11 --version)"
-    else
-        # Fallback to deadsnakes PPA with timeout
-        echo "Using deadsnakes PPA..."
-        apt-get install -y software-properties-common
-        add-apt-repository -y ppa:deadsnakes/ppa
-        apt-get update -qq
-        timeout 120 apt-get install -y python3.11 python3.11-venv python3.11-dev
-    fi
-    
-    # Install pip if needed
-    if ! python3.11 -m pip --version &> /dev/null; then
-        curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
-    fi
+    # Install pip for Python 3.11
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 fi
 
-# 3. Clone the repository (now public, no authentication needed)
-echo "=== Cloning repository ==="
+# 3. Clone repository
+echo "=== Cloning Shop-R1 ==="
 git clone https://github.com/christianchartier/shop-r1.git
 cd shop-r1
 
-# 4. Create Python 3.11 environment
-echo "=== Creating Python 3.11 environment ==="
-# Remove any existing venv to avoid version conflicts
+# 4. Create Python 3.11 virtual environment
+echo "=== Setting up Python Environment ==="
 rm -rf .venv
-# Explicitly use python3.11 to create venv
 python3.11 -m venv .venv
-
-# 5. Activate environment
 source .venv/bin/activate
-echo "Verifying Python version..."
 python --version  # Should show Python 3.11.x
 
-# 6. Upgrade pip and install dependencies (this takes 3-5 minutes)
-echo "=== Installing dependencies ==="
-python -m pip install -U pip setuptools wheel
+# 5. Install core dependencies
+echo "=== Installing Dependencies ==="
+python -m pip install --upgrade pip setuptools wheel
 
-# Install verifiers first (has fewer conflicts)
-python -m pip install 'verifiers @ git+https://github.com/willccbb/verifiers@main'
-
-# Core PyTorch installation (using stable version for RunPod)
+# Install PyTorch with CUDA 11.8
 python -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu118
 
-# Core ML packages in specific order to avoid conflicts
-python -m pip install "accelerate>=0.30"
-python -m pip install "transformers==4.44.2"  # Known working version
-python -m pip install "trl==0.21.0"
+# Install verifiers
+python -m pip install 'verifiers @ git+https://github.com/willccbb/verifiers@main'
 
-# Additional packages
-python -m pip install peft>=0.11 datasets>=2.19 requests openai
+# Install ML libraries (note: transformers will auto-upgrade from verifiers dependencies)
+python -m pip install \
+    "accelerate>=0.30" \
+    "peft>=0.11" \
+    "datasets>=2.19" \
+    requests \
+    openai
 
-# Note: vLLM will be installed later if needed for GRPO testing
+# Install TRL separately (compatible with auto-upgraded transformers)
+echo "Installing TRL..."
+python -m pip install "trl>=0.11"
 
-# 7. Install uv package manager (required for vf-install)
-echo "=== Installing uv package manager ==="
+# 6. Install uv package manager (for vf-install)
+echo "=== Installing uv ==="
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-uv --version
 
-# 8. Create pyproject.toml for shop-r1 environment
-echo "=== Setting up Shop-R1 environment files ==="
+# 7. Setup Shop-R1 environment
+echo "=== Setting up Shop-R1 Environment ==="
+mkdir -p environments/shop_r1
 cat > environments/shop_r1/pyproject.toml << 'EOF'
 [project]
 name = "shop-r1"
@@ -116,83 +108,54 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 EOF
 
-# 9. Install shop-r1 environment
-echo "=== Installing Shop-R1 environment ==="
+# 8. Install shop-r1 as editable package
 python -m pip install -e .
 vf-install shop-r1
 
-# 10. Fix script import issues and FlashAttention2 compatibility
-echo "=== Fixing script imports and FlashAttention2 ==="
-# Create __init__.py for scripts module
-cat > scripts/__init__.py << 'EOF'
-"""Training scripts for Shop-R1."""
-EOF
-echo "✓ Created scripts/__init__.py"
+# 9. Fix import issues
+touch scripts/__init__.py
 
-# Fix FlashAttention2 issue in SFT script (force SDPA attention)
-python -c "
+# 10. Apply FlashAttention2 fix
+echo "=== Applying FlashAttention2 Fix ==="
+python scripts/fix_flash_attention.py 2>/dev/null || python << 'PYTHON_FIX'
 import re
-sft_file = 'scripts/sft_train.py'
-with open(sft_file, 'r') as f:
+
+# Read the SFT script
+with open('scripts/sft_train.py', 'r') as f:
     content = f.read()
 
-# Replace the verifiers loading section to force SDPA attention
-old_pattern = r'# Load model/tokenizer.*?if callable\(get_mat\):\s*model, tokenizer = get_mat\(args\.model\)\s*else:'
-new_replacement = '''# Load model/tokenizer (fallback to transformers if verifiers API is absent)
-    # TEMPORARY FIX: Force fallback to avoid FlashAttention2 requirement
-    get_mat = None  # Force use of direct transformers loading with SDPA
-    if False:  # Disable verifiers loading temporarily
-        model, tokenizer = get_mat(args.model)
-    else:'''
+# Force SDPA attention in verifiers call
+pattern1 = r'model, tokenizer = get_mat\(args\.model\)'
+replacement1 = '''# Force SDPA attention
+        import os
+        os.environ['_TRANSFORMERS_ATTN_IMPLEMENTATION'] = 'sdpa'
+        model_kwargs = {'attn_implementation': 'sdpa', 'torch_dtype': 'auto'}
+        model, tokenizer = get_mat(args.model, use_liger=False, model_kwargs=model_kwargs)'''
 
-content = re.sub(old_pattern, new_replacement, content, flags=re.DOTALL)
-with open(sft_file, 'w') as f:
+if re.search(pattern1, content):
+    content = re.sub(pattern1, replacement1, content)
+    print("✓ Patched verifiers call to use SDPA")
+
+# Also patch fallback transformers loading
+pattern2 = r'model = AutoModelForCausalLM\.from_pretrained\([^)]+\)'
+if 'attn_implementation' not in content and re.search(pattern2, content):
+    def add_attn_impl(match):
+        call = match.group(0)
+        if 'attn_implementation' not in call:
+            return call[:-1] + ',\n            attn_implementation="sdpa")'
+        return call
+    
+    content = re.sub(pattern2, add_attn_impl, content)
+    print("✓ Patched fallback AutoModelForCausalLM to use SDPA")
+
+with open('scripts/sft_train.py', 'w') as f:
     f.write(content)
-print('✓ Fixed FlashAttention2 compatibility in SFT script')
-"
 
-# 11. Quick validation test
-echo "=== Running quick test ==="
-python tests/quick_test.py
+print("✓ FlashAttention2 fix applied successfully")
+PYTHON_FIX
 
-# 12. Show GPU info
-echo "=== GPU Information ==="
-nvidia-smi -L || echo "No GPUs found"
-
-echo "=== Setup Complete! ==="
-echo "Next: Fix remaining issues and run training tests below"
-```
-
-## Step 3: Fix Issues (If Any Occur)
-
-### If you see "Could not import module 'Trainer'" errors:
-
-```bash
-echo "=== Comprehensive ML stack reinstall ==="
-python -m pip uninstall -y transformers trl accelerate torch torchvision xformers
-python -m pip cache purge
-python -m pip install --no-cache-dir torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118
-python -m pip install --no-cache-dir "accelerate>=0.30"
-python -m pip install --no-cache-dir "transformers==4.44.2"
-python -m pip install --no-cache-dir "trl==0.21.0"
-```
-
-### If you see FlashAttention2 errors during training:
-
-The setup script already includes the fix, but if you encounter FA2 errors:
-
-```bash
-# The fix is already applied in Step 2, but you can verify:
-grep -A5 "TEMPORARY FIX" scripts/sft_train.py
-# Should show: get_mat = None  # Force use of direct transformers loading with SDPA
-```
-
-**Note**: Shop-R1 uses SDPA attention (not FlashAttention2) as confirmed in the commit history.
-
-## Step 4: Create Test Data
-
-```bash
-# Create small test dataset
+# 11. Create test dataset
+echo "=== Creating Test Data ==="
 mkdir -p data
 cat > data/test.jsonl << 'EOF'
 {"prompt": [{"role": "user", "content": "Search for laptop"}], "answer": {"type": "type_and_submit", "name": "search", "text": "laptop"}, "rationale": "Looking for a laptop"}
@@ -200,111 +163,36 @@ cat > data/test.jsonl << 'EOF'
 {"prompt": [{"role": "user", "content": "Done shopping"}], "answer": {"type": "terminate"}, "rationale": "Finished"}
 EOF
 
-echo "Created test dataset with $(wc -l < data/test.jsonl) examples"
+echo "✓ Test dataset created"
+
+# 12. Verify installation
+echo "=== Verifying Installation ==="
+python -c "
+import torch, transformers, accelerate, verifiers
+print(f'PyTorch: {torch.__version__}')
+print(f'Transformers: {transformers.__version__}')
+print(f'CUDA available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+print('✓ All core packages imported successfully')
+"
+
+# Show GPU info
+nvidia-smi -L
+
+echo "========================================="
+echo "✅ SETUP COMPLETE!"
+echo "========================================="
+
+# IMPORTANT: Activate the virtual environment
+cd /workspace/shop-r1
+source .venv/bin/activate
 ```
 
-## Step 5: Test SFT Training (Quick Test)
+## Step 3: Test SFT Training
 
 ```bash
-# First run diagnostic logging to understand the FlashAttention2 issue
-echo "=== DIAGNOSTIC: FlashAttention2 Issue Analysis ==="
-
-# Check environment variables
-echo "Environment variables:"
-echo "TRANSFORMERS_ATTENTION_TYPE=$TRANSFORMERS_ATTENTION_TYPE"
-
-# Test 1: Check if verifiers respects environment variables
-python -c "
-import os
-print('Environment check:')
-print(f'TRANSFORMERS_ATTENTION_TYPE: {os.getenv(\"TRANSFORMERS_ATTENTION_TYPE\", \"NOT SET\")}')
-
-# Test 2: Check Qwen model config
-from transformers import AutoConfig
-config = AutoConfig.from_pretrained('Qwen/Qwen2.5-0.5B-Instruct')
-print(f'Model default _attn_implementation: {getattr(config, \"_attn_implementation\", \"NOT SET\")}')
-print(f'Model _attn_implementation_internal: {getattr(config, \"_attn_implementation_internal\", \"NOT SET\")}')
-
-# Test 3: Check what verifiers does
-try:
-    import verifiers as vf
-    from verifiers.utils.model_utils import get_model_and_tokenizer
-    print('\\nVerifiers package found')
-    
-    # Check if verifiers has attention control
-    import inspect
-    sig = inspect.signature(get_model_and_tokenizer)
-    print(f'get_model_and_tokenizer parameters: {list(sig.parameters.keys())}')
-except Exception as e:
-    print(f'Error checking verifiers: {e}')
-"
-
-# Test 4: Try forcing SDPA in multiple ways
-export TRANSFORMERS_ATTENTION_TYPE=sdpa
-export _TRANSFORMERS_ATTENTION_TYPE=sdpa
-export TRANSFORMERS_ATTENTION_IMPLEMENTATION=sdpa
-
-echo "=== END DIAGNOSTIC ==="
-echo "Now implementing the fix: Force SDPA via model_kwargs in verifiers..."
-
-# SOLUTION: Two-step fix - Force verifiers to use SDPA and patch fallback
-python -c "
-import re
-
-# Read the SFT script
-with open('scripts/sft_train.py', 'r') as f:
-    content = f.read()
-
-print('Current script around get_mat call:')
-lines = content.split('\\n')
-for i, line in enumerate(lines):
-    if 'get_mat' in line:
-        start = max(0, i-5)
-        end = min(len(lines), i+15)
-        for j in range(start, end):
-            marker = '>>> ' if j == i else '    '
-            print(f'{marker}{j+1}: {lines[j]}')
-        break
-
-# Step 1: Force verifiers to pass attn_implementation via model_kwargs
-get_mat_pattern = r'model, tokenizer = get_mat\(args\.model\)'
-get_mat_replacement = '''# Force SDPA attention via verifiers model_kwargs
-        import os
-        os.environ['_TRANSFORMERS_ATTN_IMPLEMENTATION'] = 'sdpa'
-        model_kwargs = {'attn_implementation': 'sdpa', 'torch_dtype': 'auto'}
-        model, tokenizer = get_mat(args.model, use_liger=False, model_kwargs=model_kwargs)'''
-
-step1_success = False
-if re.search(get_mat_pattern, content):
-    content = re.sub(get_mat_pattern, get_mat_replacement, content)
-    step1_success = True
-    print('✓ Step 1: Patched get_mat call to force SDPA via model_kwargs')
-
-# Step 2: Also patch the fallback transformers path as backup
-fallback_pattern = r'(model = AutoModelForCausalLM\.from_pretrained\(\s*args\.model,\s*device_map=\"auto\",\s*torch_dtype=\"auto\",\s*trust_remote_code=True,?\s*\))'
-fallback_replacement = '''model = AutoModelForCausalLM.from_pretrained(
-            args.model,
-            device_map=\"auto\",
-            torch_dtype=\"auto\",
-            attn_implementation=\"sdpa\",
-            trust_remote_code=True,
-        )'''
-
-step2_success = False
-if re.search(fallback_pattern, content, re.MULTILINE | re.DOTALL):
-    content = re.sub(fallback_pattern, fallback_replacement, content, flags=re.MULTILINE | re.DOTALL)
-    step2_success = True
-    print('✓ Step 2: Patched fallback AutoModelForCausalLM call')
-
-if step1_success or step2_success:
-    with open('scripts/sft_train.py', 'w') as f:
-        f.write(content)
-    print(f'✓ Successfully patched SFT script (Step1: {step1_success}, Step2: {step2_success})')
-else:
-    print('❌ Could not find either get_mat or AutoModelForCausalLM patterns')
-"
-
-# Run minimal SFT test with the patched script
+# Quick test with minimal dataset
 python scripts/sft_train.py \
   --dataset data/test.jsonl \
   --model Qwen/Qwen2.5-0.5B-Instruct \
@@ -321,38 +209,15 @@ python scripts/sft_train.py \
 ls -la checkpoints/test_sft/
 ```
 
-## Step 6: Test GRPO (If You Have 2+ GPUs)
+## Step 4: Test GRPO (Optional - Requires 2 GPUs)
 
-**First install vLLM and missing GRPO dependencies:**
+**Note**: GRPO has known dataset iteration issues in the current environment. Skip to Step 5 (Evaluation) for more critical validation.
+
 ```bash
-# Install vLLM and wandb for GRPO testing
+# Install vLLM and wandb for GRPO
 python -m pip install "vllm==0.10.1.1" wandb
-```
 
-### Terminal 1: Start vLLM Server (in tmux)
-```bash
-# Create tmux session
-tmux new -s vllm
-
-# Inside tmux - run these commands:
-cd /workspace/shop-r1 || cd /ephemeral/shop-r1 || cd ~/shop-r1
-source .venv/bin/activate
-CUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --host 0.0.0.0 --port 8000 \
-  --max-model-len 1024 \
-  --gpu-memory-utilization 0.20
-
-# Press Ctrl+B, then D to detach from tmux
-```
-
-### Terminal 2: Run GRPO Test (main terminal)
-```bash
-# Check server is running
-sleep 15
-curl -L -s -o /dev/null -w "Server status: %{http_code}\n" http://localhost:8000/get_world_size/
-
-# Create larger test dataset for GRPO (original has only 3 samples)
+# Create larger test dataset
 cat > data/test_large.jsonl << 'EOF'
 {"prompt": [{"role": "user", "content": "Search for laptop"}], "answer": {"type": "type_and_submit", "name": "search", "text": "laptop"}, "rationale": "Looking for a laptop"}
 {"prompt": [{"role": "user", "content": "Click add to cart"}], "answer": {"type": "click", "name": "add_to_cart"}, "rationale": "Adding to cart"}
@@ -364,13 +229,19 @@ cat > data/test_large.jsonl << 'EOF'
 {"prompt": [{"role": "user", "content": "End session"}], "answer": {"type": "terminate"}, "rationale": "Finished shopping"}
 EOF
 
-# Verify dataset is properly formatted
-echo "=== Dataset Verification ==="
-wc -l data/test_large.jsonl
-head -2 data/test_large.jsonl
+# Terminal 1: Start vLLM server (in tmux)
+tmux new -s vllm
+# Inside tmux:
+cd /workspace/shop-r1 && source .venv/bin/activate
+CUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve \
+  --model Qwen/Qwen2.5-0.5B-Instruct \
+  --host 0.0.0.0 --port 8000 \
+  --max-model-len 1024 \
+  --gpu-memory-utilization 0.20
+# Press Ctrl+B, then D to detach
 
-# Run GRPO with optimized settings (if dataset iteration issues persist, try these alternative settings)
-echo "=== GRPO Test (Primary Settings) ==="
+# Terminal 2: Run GRPO (main terminal)
+sleep 15
 CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
   --model Qwen/Qwen2.5-0.5B-Instruct \
   --dataset data/test_large.jsonl \
@@ -384,92 +255,22 @@ CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
   --max_seq_len 1024 \
   --learning_rate 1e-7
 
-# Alternative: If above fails with "no single sample in epoch_iterator", try these settings:
-echo "=== GRPO Test (Alternative Settings if Primary Fails) ==="
-CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --dataset data/test_large.jsonl \
-  --output_dir checkpoints/test_rl_alt \
-  --max_steps 1 \
-  --save_steps 1 \
-  --eval_steps 1 \
-  --per_device_batch_size 2 \
-  --num_generations 2 \
-  --grad_accum 1 \
-  --max_seq_len 1024 \
-  --learning_rate 1e-7
-
-# =========================================================================
-# KNOWN ISSUE: GRPO Dataset Iterator Problem (Environment-Specific)
-# =========================================================================
-# 
-# ISSUE DESCRIPTION:
-# Both primary and alternative GRPO configurations fail with the same error:
-# "There seems not to be a single sample in your epoch_iterator, stopping training at step 0!"
-#
-# ANALYSIS:
-# - Dataset is correctly formatted (8 valid JSONL samples verified)
-# - vLLM server communication works (NCCL, wandb integration successful) 
-# - Dataset loading shows correct statistics (Dataset size: 8, Steps per epoch: 8.0)
-# - Issue appears to be in verifiers GRPO trainer's internal dataset iteration mechanism
-# - Multiple batch size configurations (1→2), step counts (2→1), and generation settings tested
-# - All configurations exhibit identical failure pattern at step 0
-#
-# ROOT CAUSE:
-# This appears to be a compatibility issue between:
-# - verifiers GRPO trainer implementation
-# - Current transformers/datasets/TRL version combination
-# - IterableDataset handling in this specific environment
-#
-# IMPACT ON SHOP-R1 FIDELITY:
-# - ✅ SFT training works perfectly (core training pipeline functional)
-# - ✅ vLLM server + NCCL communication confirmed working
-# - ✅ All Shop-R1 reward components load and initialize correctly
-# - ✅ FlashAttention2 issue resolved with SDPA attention
-# - ❌ GRPO reinforcement learning step cannot be tested in this environment
-#
-# WORKAROUND:
-# Skip GRPO testing and proceed directly to evaluation (Step 7) which validates
-# the actual Shop-R1 environment implementation, reward calculation, and paper fidelity.
-# The evaluation step is MORE CRITICAL than GRPO for verifying implementation correctness.
-#
-# RESOLUTION STATUS:
-# - Short-term: Document as known limitation, prioritize evaluation testing
-# - Long-term: Requires investigation of verifiers GRPO trainer + environment compatibility
-# =========================================================================
-
-echo "⚠️  GRPO training has known dataset iteration issues in this environment"
-echo "✅ Proceeding to evaluation (Step 7) - more critical for Shop-R1 validation"
-
-# Kill vLLM server to prepare for evaluation
+# Clean up
 tmux kill-session -t vllm
 ```
 
-## Step 7: Run Evaluation
+## Step 5: Run Evaluation (Most Important Test)
 
-### Terminal 1: Start Evaluation vLLM Server (in tmux)
-
-**IMPORTANT**: Check GPU usage before starting to avoid resource conflicts.
-
+### Terminal 1: Start Evaluation vLLM Server
 ```bash
-# First check GPU memory usage
+# Check GPU memory first
 nvidia-smi
 
-# Clean up any lingering vLLM processes
-pkill -f vllm
-pkill -f "python -m vllm"
-
-# Create tmux session for evaluation server
+# Start tmux session
 tmux new -s eval
 
-# Inside tmux - run these commands:
-cd /workspace/shop-r1 || cd /ephemeral/shop-r1 || cd ~/shop-r1
-source .venv/bin/activate
-
-# CRITICAL: Use GPU isolation and optimized settings
-# - CUDA_VISIBLE_DEVICES=1 uses the free GPU (GPU 0 likely has SFT model loaded)
-# - Reduced memory settings to avoid initialization failures
-# - --enforce-eager disables CUDA graphs for stability
+# Inside tmux:
+cd /workspace/shop-r1 && source .venv/bin/activate
 CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen2.5-0.5B-Instruct \
   --host 0.0.0.0 --port 8001 \
@@ -479,12 +280,46 @@ CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
   --disable-log-requests \
   --enforce-eager
 
-# Wait for "Starting vLLM API server" message, then press Ctrl+B, then D to detach
+# Press Ctrl+B, then D to detach
 ```
 
-**Troubleshooting**: If server fails to start, try ultra-minimal settings:
+### Terminal 2: Run Evaluation
 ```bash
-# Fallback configuration if above fails
+# Wait for server to load
+sleep 30
+
+# Set environment
+export OPENAI_API_KEY=EMPTY
+export OPENAI_BASE_URL=http://localhost:8001/v1
+
+# Test server connection
+curl -s http://localhost:8001/v1/models | jq .
+
+# Run evaluation (IMPORTANT: must specify -b and -k flags)
+vf-eval shop-r1 -m Qwen/Qwen2.5-0.5B-Instruct -b http://localhost:8001/v1 -k EMPTY -n 5
+
+# Clean up
+tmux kill-session -t eval
+```
+
+## Troubleshooting
+
+### If Python 3.11 installation hangs:
+```bash
+# Kill the hanging process and use the alternative method:
+pkill -f apt
+DEBIAN_FRONTEND=noninteractive apt-get install -y python3.11 python3.11-venv python3.11-dev
+```
+
+### If TRL installation conflicts with transformers:
+```bash
+# Install TRL with flexible version after transformers is settled
+python -m pip install "trl>=0.11"  # Will find compatible version
+```
+
+### If vLLM server fails to start:
+```bash
+# Use reduced memory settings
 CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen2.5-0.5B-Instruct \
   --host 0.0.0.0 --port 8001 \
@@ -496,27 +331,25 @@ CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
   --max-num-batched-tokens 512
 ```
 
-### Terminal 2: Run Evaluation (main terminal)
-```bash
-# Wait for server to fully load (takes ~30 seconds)
-sleep 30
+## Known Issues
 
-# Set environment and run eval
-export OPENAI_API_KEY=EMPTY
-export OPENAI_BASE_URL=http://localhost:8001/v1
+1. **GRPO Dataset Iterator**: GRPO training fails with "no single sample in epoch_iterator" error. This is a compatibility issue between verifiers GRPO trainer and the current environment. SFT training works correctly.
 
-# IMPORTANT: vf-eval requires explicit base-url and key parameters
-# The environment variables alone are not sufficient
-echo "=== Testing vLLM server connection ==="
-curl -s http://localhost:8001/v1/models | jq .
+2. **FlashAttention2**: The setup automatically patches scripts to use SDPA attention instead of FlashAttention2, which is not available in the RunPod environment.
 
-# Run evaluation with explicit parameters (CRITICAL: must specify -b and -k flags)
-echo "=== Running Shop-R1 evaluation ==="
-vf-eval shop-r1 -m Qwen/Qwen2.5-0.5B-Instruct -b http://localhost:8001/v1 -k EMPTY -n 5
+3. **TRL Version Conflict**: The verifiers package may install an older transformers version that conflicts with TRL. Install TRL after all other packages to resolve.
 
-# Alternative command syntax if above fails:
-# vf-eval shop-r1 --model-id Qwen/Qwen2.5-0.5B-Instruct --base-url http://localhost:8001/v1 --key EMPTY -n 5
+## Summary
 
-# Kill evaluation server when done
-tmux kill-session -t eval
-```
+✅ **Working Components:**
+- Python 3.11 installation
+- Shop-R1 repository setup
+- SFT training pipeline
+- vLLM server setup
+- Evaluation framework
+
+⚠️ **Known Limitations:**
+- GRPO training (dataset iteration issue)
+- FlashAttention2 (using SDPA workaround)
+
+The setup is sufficient for testing Shop-R1's core functionality, with SFT training and evaluation being the most critical components for validating the implementation.

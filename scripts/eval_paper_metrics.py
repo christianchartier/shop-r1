@@ -55,7 +55,19 @@ class EvaluationMetrics:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
-        return asdict(self)
+        # Convert nested defaultdicts to regular dicts for JSON serialization
+        confusion_dict = {}
+        for true_type, pred_dict in self.confusion_matrix.items():
+            confusion_dict[true_type] = dict(pred_dict)
+        
+        return {
+            "exact_action_acc": self.exact_action_acc,
+            "action_type_acc": self.action_type_acc,
+            "action_type_f1": self.action_type_f1,
+            "per_class_metrics": self.per_class_metrics,
+            "total_samples": self.total_samples,
+            "confusion_matrix": confusion_dict
+        }
 
 
 class PaperMetricsEvaluator:

@@ -71,14 +71,15 @@ def test_single_example():
         print(f"❌ Test file not found: {test_file}")
         print("Creating a simple test example...")
         
+        # Use the correct format from the Shop-R1 dataset
         example = {
-            "prompt": "Click on the \"Add to Cart\" button for the product \"Wireless Mouse\"",
-            "action": {
+            "prompt": [{"role": "user", "content": "Click on the \"Add to Cart\" button for the product \"Wireless Mouse\""}],
+            "response": json.dumps({
                 "rationale": "I need to click the Add to Cart button for the Wireless Mouse product",
-                "type": "click",
+                "type": "click", 
                 "name": "button[Add to Cart]",
                 "text": ""
-            }
+            })
         }
         
         with open(test_file, 'w') as f:
@@ -92,8 +93,31 @@ def test_single_example():
     print("\n" + "="*60)
     print("TEST EXAMPLE:")
     print("="*60)
-    print(f"Prompt: {example['prompt']}")
-    print(f"Expected Action: {json.dumps(example['action'], indent=2)}")
+    
+    # Handle both old and new format
+    if isinstance(example.get('prompt'), list):
+        # New format with role/content
+        prompt_text = example['prompt'][0]['content']
+        print(f"Prompt: {prompt_text[:200]}...")
+    else:
+        prompt_text = example.get('prompt', '')
+        print(f"Prompt: {prompt_text}")
+    
+    # Get expected action
+    if 'response' in example:
+        # Response is a JSON string
+        try:
+            expected_action = json.loads(example['response'])
+            print(f"Expected Action: {json.dumps(expected_action, indent=2)}")
+        except:
+            print(f"Expected Response (raw): {example['response']}")
+            expected_action = None
+    elif 'action' in example:
+        expected_action = example['action']
+        print(f"Expected Action: {json.dumps(expected_action, indent=2)}")
+    else:
+        print("No expected action/response found in example")
+        expected_action = None
     
     # Test with OpenAI API
     client = OpenAI(
@@ -105,29 +129,23 @@ def test_single_example():
     print("TESTING MODEL RESPONSE:")
     print("="*60)
     
-    # Create the prompt
-    prompt = f"""You are an AI assistant helping users navigate web interfaces. Given a task, respond with a JSON action.
-
-Task: {example['prompt']}
-
-Respond with ONLY a JSON object in this format:
-{{
-    "rationale": "Brief explanation of the action",
-    "type": "click|type_and_submit|terminate",
-    "name": "element selector or name",
-    "text": "text to type (if applicable, otherwise empty string)"
-}}
-
-Action:"""
+    # Create the prompt - use the actual prompt from the example
+    if isinstance(example.get('prompt'), list):
+        # Use the format from the dataset
+        messages = example['prompt']
+        prompt = messages[0]['content'] if messages else ""
+    else:
+        prompt = example.get('prompt', '')
     
     print(f"Sending prompt to model...")
     print(f"Model endpoint: {client.base_url}")
     
     try:
+        # For Shop-R1, the prompt already contains the full context
+        # Just send it directly as the model would receive it during evaluation
         response = client.chat.completions.create(
             model="Qwen/Qwen2.5-0.5B-Instruct",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that outputs JSON actions for web navigation."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1,
@@ -144,28 +162,30 @@ Action:"""
             print(f"\n✅ Successfully parsed action: {json.dumps(parsed_action, indent=2)}")
             
             # Compare with expected
-            expected = example['action']
-            print("\n" + "="*60)
-            print("COMPARISON:")
-            print("="*60)
+            if expected_action:
+                print("\n" + "="*60)
+                print("COMPARISON:")
+                print("="*60)
+                
+                # Check type match
+                type_match = parsed_action.get('type') == expected_action.get('type')
+                print(f"Type match: {parsed_action.get('type')} == {expected_action.get('type')} : {type_match}")
             
-            # Check type match
-            type_match = parsed_action.get('type') == expected.get('type')
-            print(f"Type match: {parsed_action.get('type')} == {expected.get('type')} : {type_match}")
-            
-            # Check name match (for click and type_and_submit)
-            if expected.get('type') in ['click', 'type_and_submit']:
-                name_match = parsed_action.get('name') == expected.get('name')
-                print(f"Name match: {parsed_action.get('name')} == {expected.get('name')} : {name_match}")
-            
-            # Check text match (for type_and_submit)
-            if expected.get('type') == 'type_and_submit':
-                text_match = parsed_action.get('text') == expected.get('text')
-                print(f"Text match: {parsed_action.get('text')} == {expected.get('text')} : {text_match}")
-            
-            # Calculate metrics
-            exact_match = parsed_action == {k: v for k, v in expected.items() if k != 'rationale'}
-            print(f"\nExact match (ignoring rationale): {exact_match}")
+                # Check name match (for click and type_and_submit)
+                if expected_action.get('type') in ['click', 'type_and_submit']:
+                    name_match = parsed_action.get('name') == expected_action.get('name')
+                    print(f"Name match: {parsed_action.get('name')} == {expected_action.get('name')} : {name_match}")
+                
+                # Check text match (for type_and_submit)
+                if expected_action.get('type') == 'type_and_submit':
+                    text_match = parsed_action.get('text') == expected_action.get('text')
+                    print(f"Text match: {parsed_action.get('text')} == {expected_action.get('text')} : {text_match}")
+                
+                # Calculate metrics
+                exact_match = parsed_action == {k: v for k, v in expected_action.items() if k != 'rationale'}
+                print(f"\nExact match (ignoring rationale): {exact_match}")
+            else:
+                print("\n⚠️  No expected action to compare against")
             
         else:
             print("\n❌ Failed to parse action from model output")

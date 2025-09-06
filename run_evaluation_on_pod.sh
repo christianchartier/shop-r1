@@ -23,8 +23,16 @@ fi
 
 # Step 2: Create test dataset if needed
 if [ ! -f "data/test.jsonl" ]; then
-    echo "Creating test dataset..."
+    echo "Creating test dataset (100 examples)..."
     python environments/shop_r1/synthesize.py -o data/test.jsonl -n 100 --seed 42
+else
+    # Check how many examples are in the dataset
+    num_lines=$(wc -l < data/test.jsonl)
+    echo "Found existing test dataset with $num_lines examples"
+    if [ "$num_lines" -lt 10 ]; then
+        echo "Dataset too small, regenerating with 100 examples..."
+        python environments/shop_r1/synthesize.py -o data/test.jsonl -n 100 --seed 42
+    fi
 fi
 
 # Step 3: Start evaluation server
@@ -65,11 +73,14 @@ echo "================================"
 mkdir -p results/evaluation
 
 # 5a. Quick zero-shot baseline
-echo "1. Zero-shot baseline (10 examples)..."
+# First check how many examples we have
+num_examples=$(wc -l < data/test.jsonl)
+eval_count=$((num_examples < 10 ? num_examples : 10))
+echo "1. Zero-shot baseline ($eval_count examples from $num_examples total)..."
 python scripts/eval_paper_metrics.py \
   --dataset data/test.jsonl \
   --model_alias local-qwen \
-  --max_examples 10 \
+  --max_examples $eval_count \
   --output results/evaluation/zero_shot_quick.json
 
 # 5b. Check if we have trained models

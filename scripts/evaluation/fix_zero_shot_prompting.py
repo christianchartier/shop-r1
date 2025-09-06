@@ -136,8 +136,10 @@ Response format must be EXACTLY:
                 'prediction': predicted
             })
         
-        # Calculate metrics
-        metrics = self.evaluator.compute_metrics(results)
+        # Calculate metrics - compute_metrics expects separate lists
+        truths = [r['truth'] for r in results]
+        predictions = [r['prediction'] for r in results]
+        metrics = self.evaluator.compute_metrics(truths, predictions)
         
         print("\n" + "="*60)
         print("IMPROVED ZERO-SHOT RESULTS:")

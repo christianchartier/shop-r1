@@ -109,8 +109,14 @@ Response format must be EXACTLY:
             else:
                 prompt = example.get('prompt', '')
             
-            # Get expected response
-            if 'response' in example:
+            # Get expected response - dataset uses 'answer' field not 'response'
+            if 'answer' in example:
+                try:
+                    expected = json.loads(example['answer'])
+                except:
+                    expected = None
+            elif 'response' in example:
+                # Some datasets might use 'response'
                 try:
                     expected = json.loads(example['response'])
                 except:

@@ -33,8 +33,22 @@ def check_dataset(file_path="data/test.jsonl"):
             else:
                 print(f"Prompt type: {type(example['prompt'])}")
         
-        # Check response format
-        if 'response' in example:
+        # Check response/answer format
+        if 'answer' in example:
+            resp = example['answer']
+            print(f"Answer type: {type(resp)}")
+            if isinstance(resp, str):
+                # Try to parse as JSON
+                try:
+                    parsed = json.loads(resp)
+                    print(f"Answer is JSON string with fields: {list(parsed.keys())}")
+                    if 'type' in parsed:
+                        print(f"Action type: {parsed['type']}")
+                    if 'name' in parsed:
+                        print(f"Name: {parsed['name']}")
+                except:
+                    print(f"Answer preview: {resp[:100]}...")
+        elif 'response' in example:
             resp = example['response']
             print(f"Response type: {type(resp)}")
             if isinstance(resp, str):
@@ -47,15 +61,17 @@ def check_dataset(file_path="data/test.jsonl"):
                 except:
                     print(f"Response preview: {resp[:100]}...")
         else:
-            print("No 'response' field")
+            print("No 'answer' or 'response' field")
         
         # Check for action field
         if 'action' in example:
             print(f"Has 'action' field: {example['action']}")
     
-    # Check how many have responses
+    # Check how many have responses/answers
     with_response = sum(1 for line in lines if 'response' in json.loads(line))
+    with_answer = sum(1 for line in lines if 'answer' in json.loads(line))
     print(f"\n{with_response}/{len(lines)} examples have 'response' field")
+    print(f"{with_answer}/{len(lines)} examples have 'answer' field")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

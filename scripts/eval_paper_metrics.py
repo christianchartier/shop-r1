@@ -396,7 +396,20 @@ Example usage:
         print(f"Loading checkpoint: {args.use_checkpoint}")
         raise NotImplementedError("Checkpoint loading not yet implemented")
     else:
-        from configs.endpoints import ENDPOINTS
+        # Add parent directory to path to find configs module
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        try:
+            from configs.endpoints import ENDPOINTS
+        except ImportError:
+            # Fallback: define endpoints directly if configs module not found
+            ENDPOINTS = {
+                "local-qwen": {
+                    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+                    "url": os.getenv("OPENAI_BASE_URL", "http://localhost:8001/v1"),
+                    "key": "OPENAI_API_KEY",
+                }
+            }
+            print("Warning: Using fallback endpoint configuration")
         
         if args.model_alias not in ENDPOINTS:
             print(f"Error: Unknown model alias '{args.model_alias}'")

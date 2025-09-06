@@ -46,9 +46,8 @@ ls -la checkpoints/test_sft/
 1. **TRL Communicator** (port 8000, GPU 0): Handles distributed training coordination
 2. **OpenAI API Server** (port 8001, GPU 1): Handles model generation requests
 
-### Quick Option: Use the Complete Setup Script
 ```bash
-# Download and run the all-in-one script
+# Download and run the all-in-one setup script
 wget https://raw.githubusercontent.com/christianchartier/shop-r1/main/run_grpo_complete.sh
 chmod +x run_grpo_complete.sh
 
@@ -59,138 +58,14 @@ chmod +x run_grpo_complete.sh
 ./run_grpo_complete.sh
 ```
 
-### Manual Setup Option
+The script handles:
+- Installing vLLM and dependencies
+- Creating RL dataset
+- Starting both servers with correct configuration
+- Running GRPO training with verified parameters
+- Monitoring and cleanup options
 
-### 4.1 Install Dependencies
-```bash
-cd /workspace/shop-r1 && source .venv/bin/activate
-python -m pip install "vllm==0.10.1.1" wandb
-```
-
-### 4.2 Create RL Dataset
-```bash
-# Generate a small dataset for testing (or use your own)
-python environments/shop_r1/synthesize.py -o data/rl.jsonl -n 200 --seed 7
-```
-
-### 4.3 Start Both Servers
-
-**Terminal A - TRL Communicator Server (GPU 0, port 8000):**
-```bash
-tmux new -d -s vllm_trl "cd /workspace/shop-r1 && source .venv/bin/activate && \
-  CUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --host 0.0.0.0 --port 8000 \
-  --max-model-len 1024 \
-  --gpu-memory-utilization 0.60"
-
-# Wait and verify TRL server is running
-sleep 15
-curl -s -i http://localhost:8000/get_world_size/
-# Should return: {"world_size":1}
-```
-
-**Terminal B - OpenAI API Server (GPU 1, port 8001):**
-```bash
-tmux new -d -s vllm_oai "cd /workspace/shop-r1 && source .venv/bin/activate && \
-  CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --host 0.0.0.0 --port 8001 \
-  --dtype auto \
-  --max-model-len 1024 \
-  --gpu-memory-utilization 0.50 \
-  --disable-log-requests \
-  --enforce-eager \
-  --max-num-batched-tokens 512"
-
-# Wait and verify OpenAI server is running
-sleep 25
-curl -s http://localhost:8001/v1/models | python -m json.tool
-# Should show model information
-```
-
-### 4.4 Run GRPO Training
-
-**Quick Test (Verified Working):**
-```bash
-cd /workspace/shop-r1 && source .venv/bin/activate
-export OPENAI_API_KEY=EMPTY
-export OPENAI_BASE_URL=http://localhost:8001/v1
-
-# Minimal test - 1 step to verify setup
-CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --dataset data/rl.jsonl \
-  --output_dir checkpoints/rl_test \
-  --strict \
-  --sim_threshold 0.75 \
-  --alpha 0.005 \
-  --beta 0.001 \
-  --dars_factor 1000 \
-  --temperature 0.6 \
-  --per_device_batch_size 1 \
-  --num_generations 1 \
-  --grad_accum 1 \
-  --max_steps 1 \
-  --save_steps 100 \
-  --eval_steps 100 \
-  --max_seq_len 1024 \
-  --learning_rate 1e-7
-```
-
-**Full Training Run:**
-```bash
-# After verifying the test works, run full training
-CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --dataset data/rl.jsonl \
-  --output_dir checkpoints/rl_shop_r1 \
-  --strict \
-  --sim_threshold 0.75 \
-  --alpha 0.005 \
-  --beta 0.001 \
-  --dars_factor 1000 \
-  --temperature 0.6 \
-  --per_device_batch_size 1 \
-  --num_generations 1 \
-  --grad_accum 8 \
-  --max_steps 50 \
-  --save_steps 25 \
-  --eval_steps 25 \
-  --max_seq_len 1024 \
-  --learning_rate 1e-7
-```
-
-### 4.5 Monitor Training
-
-```bash
-# Check server logs (in separate terminals)
-tmux capture-pane -pt vllm_trl | tail -n 30  # Should show only /get_world_size, /init_communicator
-tmux capture-pane -pt vllm_oai | tail -n 30  # Should show /v1/chat/completions 200 OK
-
-# Watch GPU usage
-watch -n 1 nvidia-smi
-```
-
-### 4.6 Cleanup
-```bash
-# When done, stop servers
-tmux kill-session -t vllm_trl
-tmux kill-session -t vllm_oai
-```
-
-### Troubleshooting
-
-**If you see 404 errors:** Generation requests are going to wrong server. Ensure you're using the latest code with routing fix.
-
-**If you see max_tokens errors:** The model context is being exceeded. The fix limits max_tokens to 160.
-
-**If you see batch size errors:** Use `num_generations=1` with `per_device_batch_size=1` as shown above.
-
-**Verify servers are on correct ports:**
-```bash
-netstat -tuln | grep -E "8000|8001"
-```
+For manual setup or troubleshooting, see the script source: [run_grpo_complete.sh](run_grpo_complete.sh)
 
 ## Step 5: Run Evaluation (Most Important Test)
 

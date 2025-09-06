@@ -81,14 +81,17 @@ def main():
     tr_args.max_seq_len = args.max_seq_len
     tr_args.temperature = args.temperature
     # Ensure logprobs/top_logprobs are requested for self-certainty; enforce JSON object shape
+    # Set max_tokens to a safe value that leaves room for input tokens
     try:
         tr_args.sampling_args = {
             "temperature": args.temperature,
-            "max_tokens": 160,
+            "max_tokens": 160,  # Conservative value for responses
             "logprobs": True,
             "top_logprobs": 5,
             "response_format": {"type": "json_object"},
         }
+        # Override max_tokens in trainer args to prevent it from being set to max_seq_len
+        tr_args.max_tokens = 160  # This prevents the trainer from using max_seq_len
     except Exception:
         pass
     tr_args.beta = args.beta

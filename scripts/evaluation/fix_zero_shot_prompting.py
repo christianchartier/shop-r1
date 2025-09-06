@@ -137,8 +137,22 @@ Response format must be EXACTLY:
             })
         
         # Calculate metrics - compute_metrics expects separate lists
-        truths = [r['truth'] for r in results]
-        predictions = [r['prediction'] for r in results]
+        # Filter out None values (examples without ground truth)
+        valid_results = [r for r in results if r['truth'] is not None]
+        
+        if not valid_results:
+            print("\n⚠️  No examples with ground truth found in dataset!")
+            print("This dataset may not have labeled responses.")
+            return {
+                'exact_action_acc': 0.0,
+                'action_type_acc': 0.0,
+                'action_type_f1': 0.0
+            }
+        
+        print(f"\n{len(valid_results)} examples have ground truth out of {len(results)} total")
+        
+        truths = [r['truth'] for r in valid_results]
+        predictions = [r['prediction'] for r in valid_results]
         metrics = self.evaluator.compute_metrics(truths, predictions)
         
         print("\n" + "="*60)

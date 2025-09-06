@@ -13,7 +13,7 @@ ssh -p 1234 root@[YOUR_POD_IP]
 
 ```bash
 cd /workspace
-wget https://raw.githubusercontent.com/christianchartier/shop-r1/main/RUNPOD_QUICK_SETUP.sh
+wget https://raw.githubusercontent.com/christianchartier/shop-r1/main/deployment/RUNPOD_QUICK_SETUP.sh -O RUNPOD_QUICK_SETUP.sh
 chmod +x RUNPOD_QUICK_SETUP.sh
 ./RUNPOD_QUICK_SETUP.sh
 ```
@@ -48,7 +48,7 @@ ls -la checkpoints/test_sft/
 
 ```bash
 # Download and run the all-in-one setup script
-wget https://raw.githubusercontent.com/christianchartier/shop-r1/main/run_grpo_complete.sh
+wget https://raw.githubusercontent.com/christianchartier/shop-r1/main/scripts/training/run_grpo_complete.sh -O run_grpo_complete.sh
 chmod +x run_grpo_complete.sh
 
 # Quick test (1 step)

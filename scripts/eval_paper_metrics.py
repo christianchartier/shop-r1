@@ -302,7 +302,8 @@ class PaperMetricsEvaluator:
         # Confusion matrix
         print("\nCONFUSION MATRIX:")
         print("-"*40)
-        print(f"{'True\\Pred':<20}", end="")
+        header = "True\\Pred"
+        print(f"{header:<20}", end="")
         for action_type in self.action_types:
             print(f"{action_type[:8]:<10}", end="")
         print()

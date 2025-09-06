@@ -37,7 +37,15 @@ def check_dataset(file_path="data/test.jsonl"):
         if 'answer' in example:
             resp = example['answer']
             print(f"Answer type: {type(resp)}")
-            if isinstance(resp, str):
+            if isinstance(resp, dict):
+                print(f"Answer fields: {list(resp.keys())}")
+                if 'type' in resp:
+                    print(f"Action type: {resp['type']}")
+                if 'name' in resp:
+                    print(f"Name: {resp['name']}")
+                if 'text' in resp:
+                    print(f"Text: {resp.get('text', '')[:50]}...")
+            elif isinstance(resp, str):
                 # Try to parse as JSON
                 try:
                     parsed = json.loads(resp)

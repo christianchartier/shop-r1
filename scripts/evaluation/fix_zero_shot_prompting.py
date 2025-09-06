@@ -111,15 +111,26 @@ Response format must be EXACTLY:
             
             # Get expected response - dataset uses 'answer' field not 'response'
             if 'answer' in example:
-                try:
-                    expected = json.loads(example['answer'])
-                except:
+                # Answer might be a dict already or a JSON string
+                if isinstance(example['answer'], dict):
+                    expected = example['answer']
+                elif isinstance(example['answer'], str):
+                    try:
+                        expected = json.loads(example['answer'])
+                    except:
+                        expected = None
+                else:
                     expected = None
             elif 'response' in example:
                 # Some datasets might use 'response'
-                try:
-                    expected = json.loads(example['response'])
-                except:
+                if isinstance(example['response'], dict):
+                    expected = example['response']
+                elif isinstance(example['response'], str):
+                    try:
+                        expected = json.loads(example['response'])
+                    except:
+                        expected = None
+                else:
                     expected = None
             else:
                 expected = None

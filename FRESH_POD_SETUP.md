@@ -40,9 +40,13 @@ python scripts/sft_train.py \
 ls -la checkpoints/test_sft/
 ```
 
-## Step 4: Test GRPO (Optional — 2 GPUs Recommended)
+## Step 4: Test GRPO (2 GPUs Required - Dual Server Architecture)
 
 Paper‑faithful settings: α=0.005, β=0.001, DARS=1000, temperature≈0.6, similarity threshold=0.75, strict JSON encouraged.
+
+**IMPORTANT**: GRPO requires TWO servers running simultaneously:
+- TRL Communicator Server (port 8000, GPU 0): Handles `/get_world_size` and `/init_communicator` 
+- OpenAI API Server (port 8001, GPU 1): Handles `/v1/chat/completions` for model generation
 
 ```bash
 # 4.1 Install vLLM and wandb
@@ -51,23 +55,37 @@ python -m pip install "vllm==0.10.1.1" wandb
 # 4.2 Create a small RL dataset (or bring your own)
 python environments/shop_r1/synthesize.py -o data/rl.jsonl -n 200 --seed 7
 
-# 4.3 Terminal 1: Start OpenAI-compatible vLLM server (tmux)
-tmux new -s vllm
-# Inside tmux:
-cd /workspace/shop-r1 && source .venv/bin/activate
-CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+# 4.3 Terminal A: Start TRL Communicator Server (GPU 0, port 8000)
+tmux new -d -s vllm_trl "cd /workspace/shop-r1 && source .venv/bin/activate && \
+  CUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve \
   --model Qwen/Qwen2.5-0.5B-Instruct \
   --host 0.0.0.0 --port 8000 \
+  --max-model-len 1024 \
+  --gpu-memory-utilization 0.60"
+
+# Verify TRL server is running
+sleep 10
+curl -s -i http://localhost:8000/get_world_size/
+
+# 4.4 Terminal B: Start OpenAI API Server (GPU 1, port 8001) 
+tmux new -d -s vllm_oai "cd /workspace/shop-r1 && source .venv/bin/activate && \
+  CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-0.5B-Instruct \
+  --host 0.0.0.0 --port 8001 \
   --dtype auto \
   --max-model-len 1024 \
-  --gpu-memory-utilization 0.60 \
+  --gpu-memory-utilization 0.50 \
   --disable-log-requests \
-  --enforce-eager
-# Detach with Ctrl+B, then D
+  --enforce-eager \
+  --max-num-batched-tokens 512"
 
-# 4.4 Terminal 2: Run GRPO with paper‑aligned knobs
+# Verify OpenAI server is running
+sleep 20
+curl -s http://localhost:8001/v1/models | python -m json.tool
+
+# 4.5 Terminal C: Run GRPO Training (GPU 1)
 export OPENAI_API_KEY=EMPTY
-export OPENAI_BASE_URL=http://localhost:8000/v1
+export OPENAI_BASE_URL=http://localhost:8001/v1
 
 CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
   --model Qwen/Qwen2.5-0.5B-Instruct \
@@ -80,16 +98,21 @@ CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
   --dars_factor 1000 \
   --temperature 0.6 \
   --per_device_batch_size 1 \
-  --num_generations 8 \
-  --grad_accum 8 \
-  --max_steps 50 \
+  --num_generations 2 \
+  --grad_accum 2 \
+  --max_steps 5 \
   --save_steps 25 \
   --eval_steps 25 \
   --max_seq_len 1024 \
   --learning_rate 1e-7
 
-# 4.5 Clean up
-tmux kill-session -t vllm
+# 4.6 Monitor server logs (optional, in separate terminals)
+# tmux capture-pane -pt vllm_trl | tail -n 60  # Should show only communicator endpoints
+# tmux capture-pane -pt vllm_oai | tail -n 60  # Should show /v1/chat/completions 200 OK
+
+# 4.7 Clean up
+tmux kill-session -t vllm_trl || true
+tmux kill-session -t vllm_oai || true
 ```
 
 Notes

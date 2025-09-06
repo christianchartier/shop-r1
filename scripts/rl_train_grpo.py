@@ -1,7 +1,9 @@
 import argparse
+import os
 
 import verifiers as vf
 import uuid
+from openai import AsyncOpenAI
 
 
 def main():
@@ -178,6 +180,28 @@ def main():
     except Exception:
         pass
 
+    # Create separate OpenAI client for generation (port 8001)
+    # The TRL communicator stays on port 8000 for /get_world_size and /init_communicator
+    # This prevents 404 errors when env sends generation requests
+    generation_client = AsyncOpenAI(
+        api_key=os.getenv('OPENAI_API_KEY', 'EMPTY'),
+        base_url='http://localhost:8001/v1'  # OpenAI server for generation
+    )
+    
+    # Patch environment to use the generation client instead of communicator client
+    import verifiers.envs.environment as envmod
+    _orig_get_model_response = envmod.Environment.get_model_response
+    
+    async def _route_to_generation_server(self, *args, **kwargs):
+        # Replace client with our generation client bound to port 8001
+        args_list = list(args)
+        if args_list:
+            args_list[0] = generation_client
+        kwargs['client'] = generation_client
+        return await _orig_get_model_response(self, *args_list, **kwargs)
+    
+    envmod.Environment.get_model_response = _route_to_generation_server
+    
     trainer = vf.GRPOTrainer(
         model=model,
         processing_class=tokenizer,

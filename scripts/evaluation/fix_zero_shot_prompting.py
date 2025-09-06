@@ -137,7 +137,7 @@ Response format must be EXACTLY:
             })
         
         # Calculate metrics
-        metrics = self.evaluator.calculate_metrics(results)
+        metrics = self.evaluator.compute_metrics(results)
         
         print("\n" + "="*60)
         print("IMPROVED ZERO-SHOT RESULTS:")

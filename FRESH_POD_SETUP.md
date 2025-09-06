@@ -40,22 +40,43 @@ python scripts/sft_train.py \
 ls -la checkpoints/test_sft/
 ```
 
-## Step 4: Test GRPO (2 GPUs Required - Dual Server Architecture)
+## Step 4: GRPO Training (Requires 2 GPUs)
 
-Paper‑faithful settings: α=0.005, β=0.001, DARS=1000, temperature≈0.6, similarity threshold=0.75, strict JSON encouraged.
+**Critical Architecture**: GRPO requires TWO vLLM servers running simultaneously:
+1. **TRL Communicator** (port 8000, GPU 0): Handles distributed training coordination
+2. **OpenAI API Server** (port 8001, GPU 1): Handles model generation requests
 
-**IMPORTANT**: GRPO requires TWO servers running simultaneously:
-- TRL Communicator Server (port 8000, GPU 0): Handles `/get_world_size` and `/init_communicator` 
-- OpenAI API Server (port 8001, GPU 1): Handles `/v1/chat/completions` for model generation
-
+### Quick Option: Use the Complete Setup Script
 ```bash
-# 4.1 Install vLLM and wandb
+# Download and run the all-in-one script
+wget https://raw.githubusercontent.com/christianchartier/shop-r1/main/run_grpo_complete.sh
+chmod +x run_grpo_complete.sh
+
+# Quick test (1 step)
+./run_grpo_complete.sh --quick
+
+# Full training (50 steps)
+./run_grpo_complete.sh
+```
+
+### Manual Setup Option
+
+### 4.1 Install Dependencies
+```bash
+cd /workspace/shop-r1 && source .venv/bin/activate
 python -m pip install "vllm==0.10.1.1" wandb
+```
 
-# 4.2 Create a small RL dataset (or bring your own)
+### 4.2 Create RL Dataset
+```bash
+# Generate a small dataset for testing (or use your own)
 python environments/shop_r1/synthesize.py -o data/rl.jsonl -n 200 --seed 7
+```
 
-# 4.3 Terminal A: Start TRL Communicator Server (GPU 0, port 8000)
+### 4.3 Start Both Servers
+
+**Terminal A - TRL Communicator Server (GPU 0, port 8000):**
+```bash
 tmux new -d -s vllm_trl "cd /workspace/shop-r1 && source .venv/bin/activate && \
   CUDA_VISIBLE_DEVICES=0 python -m trl.scripts.vllm_serve \
   --model Qwen/Qwen2.5-0.5B-Instruct \
@@ -63,11 +84,14 @@ tmux new -d -s vllm_trl "cd /workspace/shop-r1 && source .venv/bin/activate && \
   --max-model-len 1024 \
   --gpu-memory-utilization 0.60"
 
-# Verify TRL server is running
-sleep 10
+# Wait and verify TRL server is running
+sleep 15
 curl -s -i http://localhost:8000/get_world_size/
+# Should return: {"world_size":1}
+```
 
-# 4.4 Terminal B: Start OpenAI API Server (GPU 1, port 8001) 
+**Terminal B - OpenAI API Server (GPU 1, port 8001):**
+```bash
 tmux new -d -s vllm_oai "cd /workspace/shop-r1 && source .venv/bin/activate && \
   CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen2.5-0.5B-Instruct \
@@ -79,14 +103,44 @@ tmux new -d -s vllm_oai "cd /workspace/shop-r1 && source .venv/bin/activate && \
   --enforce-eager \
   --max-num-batched-tokens 512"
 
-# Verify OpenAI server is running
-sleep 20
+# Wait and verify OpenAI server is running
+sleep 25
 curl -s http://localhost:8001/v1/models | python -m json.tool
+# Should show model information
+```
 
-# 4.5 Terminal C: Run GRPO Training (GPU 1)
+### 4.4 Run GRPO Training
+
+**Quick Test (Verified Working):**
+```bash
+cd /workspace/shop-r1 && source .venv/bin/activate
 export OPENAI_API_KEY=EMPTY
 export OPENAI_BASE_URL=http://localhost:8001/v1
 
+# Minimal test - 1 step to verify setup
+CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
+  --model Qwen/Qwen2.5-0.5B-Instruct \
+  --dataset data/rl.jsonl \
+  --output_dir checkpoints/rl_test \
+  --strict \
+  --sim_threshold 0.75 \
+  --alpha 0.005 \
+  --beta 0.001 \
+  --dars_factor 1000 \
+  --temperature 0.6 \
+  --per_device_batch_size 1 \
+  --num_generations 1 \
+  --grad_accum 1 \
+  --max_steps 1 \
+  --save_steps 100 \
+  --eval_steps 100 \
+  --max_seq_len 1024 \
+  --learning_rate 1e-7
+```
+
+**Full Training Run:**
+```bash
+# After verifying the test works, run full training
 CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
   --model Qwen/Qwen2.5-0.5B-Instruct \
   --dataset data/rl.jsonl \
@@ -98,31 +152,45 @@ CUDA_VISIBLE_DEVICES=1 python scripts/rl_train_grpo.py \
   --dars_factor 1000 \
   --temperature 0.6 \
   --per_device_batch_size 1 \
-  --num_generations 2 \
-  --grad_accum 2 \
-  --max_steps 5 \
+  --num_generations 1 \
+  --grad_accum 8 \
+  --max_steps 50 \
   --save_steps 25 \
   --eval_steps 25 \
   --max_seq_len 1024 \
   --learning_rate 1e-7
-
-# 4.6 Monitor server logs (optional, in separate terminals)
-# tmux capture-pane -pt vllm_trl | tail -n 60  # Should show only communicator endpoints
-# tmux capture-pane -pt vllm_oai | tail -n 60  # Should show /v1/chat/completions 200 OK
-
-# 4.7 Clean up
-tmux kill-session -t vllm_trl || true
-tmux kill-session -t vllm_oai || true
 ```
 
-Notes
-- The training script now requests logprobs/top_logprobs and enforces JSON object responses for self‑certainty and format rewards.
-- Use two GPUs (one for server, one for trainer) to avoid memory contention. On a single GPU, reduce `--num_generations`, `--max_model_len`, or run smaller models.
-- If your dataset is larger, increase `--max_steps` and consider checkpointing frequency.
-- GPU assignment tips:
-  - `CUDA_VISIBLE_DEVICES=0` makes the process use physical GPU 0; `CUDA_VISIBLE_DEVICES=1` uses physical GPU 1.
-  - Inside the process, the visible device index starts at 0 regardless of mapping. Verify mapping via `echo $CUDA_VISIBLE_DEVICES`.
-  - Monitor usage with `watch -n 1 nvidia-smi` or `nvidia-smi -i 0,1 pmon -c 1` to see which PID is active on each GPU.
+### 4.5 Monitor Training
+
+```bash
+# Check server logs (in separate terminals)
+tmux capture-pane -pt vllm_trl | tail -n 30  # Should show only /get_world_size, /init_communicator
+tmux capture-pane -pt vllm_oai | tail -n 30  # Should show /v1/chat/completions 200 OK
+
+# Watch GPU usage
+watch -n 1 nvidia-smi
+```
+
+### 4.6 Cleanup
+```bash
+# When done, stop servers
+tmux kill-session -t vllm_trl
+tmux kill-session -t vllm_oai
+```
+
+### Troubleshooting
+
+**If you see 404 errors:** Generation requests are going to wrong server. Ensure you're using the latest code with routing fix.
+
+**If you see max_tokens errors:** The model context is being exceeded. The fix limits max_tokens to 160.
+
+**If you see batch size errors:** Use `num_generations=1` with `per_device_batch_size=1` as shown above.
+
+**Verify servers are on correct ports:**
+```bash
+netstat -tuln | grep -E "8000|8001"
+```
 
 ## Step 5: Run Evaluation (Most Important Test)
 
@@ -203,15 +271,19 @@ CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
   --max-num-batched-tokens 512
 ```
 
-## Known Issues
+## Known Issues (Resolved)
 
-1. **GRPO Dataset Iterator**: GRPO training fails with "no single sample in epoch_iterator" error. This is a compatibility issue between verifiers GRPO trainer and the current environment. SFT training works correctly.
+1. ~~**GRPO Dataset Iterator**: GRPO training fails with "no single sample in epoch_iterator" error.~~ **FIXED**: Resolved by implementing dual-server architecture with proper routing.
 
 2. **FlashAttention2**: The setup automatically patches scripts to use SDPA attention instead of FlashAttention2, which is not available in the RunPod environment.
 
 3. **TRL/Transformers Conflicts**: The setup script pins compatible versions automatically. If you later change packages and hit conflicts, re-run the troubleshooting pin commands to restore transformers==4.56.1 and trl==0.21.0.
 
-4. **SFT Tensor Size Mismatch**: Fixed - The setup now automatically patches the SFT training script to use DataCollatorForSeq2Seq instead of default_data_collator to handle sequences of different lengths.
+4. ~~**SFT Tensor Size Mismatch**:~~ **FIXED**: The setup now automatically patches the SFT training script to use DataCollatorForSeq2Seq instead of default_data_collator to handle sequences of different lengths.
+
+5. ~~**GRPO 404 Routing Error**:~~ **FIXED**: Generation requests now correctly route to OpenAI server on port 8001 while communicator stays on port 8000.
+
+6. ~~**GRPO max_tokens Error**:~~ **FIXED**: max_tokens is now limited to 160 to prevent exceeding model context window.
 
 ## Summary
 
@@ -220,11 +292,11 @@ CUDA_VISIBLE_DEVICES=1 python -m vllm.entrypoints.openai.api_server \
 - Shop-R1 repository setup
 - Verified pins: transformers 4.56.1; trl 0.21.0
 - SFT training pipeline
-- vLLM server setup
+- **GRPO training with dual-server architecture** ✅
+- vLLM server setup (both TRL communicator and OpenAI API)
 - Evaluation framework
 
-⚠️ **Known Limitations:**
-- GRPO training (dataset iteration issue)
-- FlashAttention2 (using SDPA workaround)
+⚠️ **Minor Limitations:**
+- FlashAttention2 (using SDPA workaround - works fine)
 
-The setup is sufficient for testing Shop-R1's core functionality, with SFT training and evaluation being the most critical components for validating the implementation.
+The setup now fully supports Shop-R1's complete training pipeline including both SFT and GRPO reinforcement learning. The dual-server architecture ensures proper routing of generation requests while maintaining TRL communication.

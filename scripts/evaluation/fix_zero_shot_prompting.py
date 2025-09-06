@@ -175,12 +175,17 @@ Response format must be EXACTLY:
         print("\n" + "="*60)
         print("IMPROVED ZERO-SHOT RESULTS:")
         print("="*60)
-        print(f"Exact Action Accuracy:  {metrics['exact_action_acc']:.2%}")
-        print(f"Action Type Accuracy:   {metrics['action_type_acc']:.2%}")
-        print(f"Action Type F1 (Macro): {metrics['action_type_f1']:.2%}")
+        print(f"Exact Action Accuracy:  {metrics.exact_action_acc:.2%}")
+        print(f"Action Type Accuracy:   {metrics.action_type_acc:.2%}")
+        print(f"Action Type F1 (Macro): {metrics.action_type_f1:.2%}")
         print("="*60)
         
-        return metrics
+        # Convert to dict for returning
+        return {
+            'exact_action_acc': metrics.exact_action_acc,
+            'action_type_acc': metrics.action_type_acc,
+            'action_type_f1': metrics.action_type_f1
+        }
 
 def main():
     parser = argparse.ArgumentParser(description='Improved zero-shot evaluation')
@@ -190,13 +195,13 @@ def main():
     args = parser.parse_args()
     
     evaluator = ImprovedZeroShotEvaluator()
-    metrics = evaluator.evaluate(args.dataset, args.max_examples)
+    metrics_dict = evaluator.evaluate(args.dataset, args.max_examples)
     
     # Save results
     output_path = 'results/evaluation/zero_shot_improved.json'
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(metrics_dict, f, indent=2)
     
     print(f"\nResults saved to: {output_path}")
 

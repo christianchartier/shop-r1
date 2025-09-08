@@ -5,15 +5,21 @@ description = "Shop-R1 environment for verifiers"
 requires-python = ">=3.8"
 dependencies = [
     "verifiers",
-    "requests>=2.31",
-    "datasets>=2.19.0", 
-    "transformers>=4.43",
+    "datasets>=2.19.0",
+]
+
+[project.optional-dependencies]
+train = [
+    "transformers==4.56.1",
+    "trl==0.21.0",
     "accelerate>=0.30",
     "peft>=0.11",
 ]
 
 [tool.setuptools]
-packages = ["shop_r1"]
+# This subdir pyproject is kept minimal for hub compatibility.
+# Local installs in this repo should prefer `uv pip install -e .` from the repo root.
+packages = []
 
 [build-system]
 requires = ["setuptools>=64", "wheel"]

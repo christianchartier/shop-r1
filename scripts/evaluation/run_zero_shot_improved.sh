@@ -22,6 +22,23 @@ source .venv/bin/activate
 export OPENAI_API_KEY=EMPTY
 export OPENAI_BASE_URL=http://localhost:8001/v1
 
+# Ensure vLLM is installed (prompt if missing)
+if ! python - << 'PY' >/dev/null 2>&1
+import importlib
+raise SystemExit(0 if importlib.util.find_spec('vllm') else 1)
+PY
+then
+    echo "vLLM is not installed in this environment."
+    read -p "Install vLLM now (pip install vllm==0.10.1.1)? [y/N]: " -r REPLY
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        pip install -U pip
+        pip install "vllm==0.10.1.1" || pip install vllm
+    else
+        echo "Aborting. Please install vLLM and rerun."
+        exit 1
+    fi
+fi
+
 # Check if server is running
 if ! curl -s http://localhost:8001/v1/models >/dev/null 2>&1; then
     echo "Starting evaluation server..."

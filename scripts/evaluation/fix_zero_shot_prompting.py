@@ -169,7 +169,8 @@ Response format must be EXACTLY:
         print(f"\n{len(valid_results)} examples have ground truth out of {len(results)} total")
         
         truths = [r['truth'] for r in valid_results]
-        predictions = [r['prediction'] for r in valid_results]
+        # Guard against None predictions by substituting empty dicts
+        predictions = [r['prediction'] or {} for r in valid_results]
         metrics = self.evaluator.compute_metrics(truths, predictions)
         
         print("\n" + "="*60)

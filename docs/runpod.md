@@ -51,16 +51,26 @@ The script handles:
 - Verified GRPO params
 
 ## 5) Evaluation
+
+Important: Evaluation requires an OpenAI‑compatible server. On a fresh pod, install and run vLLM first (not installed by the quick setup).
+
+Install vLLM (once):
+```
+source .venv/bin/activate
+pip install -U pip
+pip install "vllm==0.10.1.1"  # or vllm-cu121 for CUDA 12.x
+python -c "import vllm; print(vllm.__version__)"  # sanity
+```
 ```
 cd /workspace/shop-r1
 source .venv/bin/activate
 
 python environments/shop_r1/synthesize.py -o data/test.jsonl -n 100 --seed 42
 
-./scripts/evaluation/run_evaluation_on_pod.sh
+./scripts/evaluation/run_evaluation_on_pod.sh  # assumes vLLM is installed
 
 chmod +x scripts/evaluation/run_zero_shot_improved.sh
-./scripts/evaluation/run_zero_shot_improved.sh data/test.jsonl 50
+./scripts/evaluation/run_zero_shot_improved.sh data/test.jsonl 50  # prompts to install vLLM if missing
 ```
 Key finding: with explicit action‑format instructions, the 0.5B model’s action type accuracy rises dramatically compared to naive zero‑shot prompting.
 
@@ -114,4 +124,3 @@ vf-install shop-r1
 ## Notes
 - The scripts here reference in‑repo paths; avoid external `wget`.
 - For full details and context, see the paper and the environment README.
-

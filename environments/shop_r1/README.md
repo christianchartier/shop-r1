@@ -30,6 +30,11 @@ python scripts/eval_paper_metrics.py \
   --output results/shop_r1_results.json
 ```
 
+Note on evaluation servers:
+- Evaluation requires an OpenAI‑compatible server (e.g., vLLM). On a fresh pod, install it:
+  - `pip install "vllm==0.10.1.1"` (or `vllm-cu121` on CUDA 12.x), then start the server as shown in docs/runpod.md.
+  - The GRPO script installs and starts vLLM automatically; the improved eval script will prompt to install if missing.
+
 ## Action JSON Schema
 Example outputs:
 ```
@@ -105,4 +110,3 @@ For full SFT/RL training and vLLM serving on a pod, see `docs/runpod.md`.
 
 ## Citation
 Zhang et al., Shop‑R1 (arXiv:2507.17842)
-

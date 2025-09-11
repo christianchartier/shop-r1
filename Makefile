@@ -1,4 +1,4 @@
-.PHONY: setup test-shop-r1 eval-tiny runpod grpo-quick multiturn-smoke
+.PHONY: setup test-shop-r1 eval-tiny runpod grpo-quick grpo-50 multiturn-smoke
 
 setup:
 	uv pip install -e .
@@ -18,6 +18,11 @@ runpod:
 grpo-quick:
 	chmod +x scripts/training/run_grpo_complete.sh
 	./scripts/training/run_grpo_complete.sh --quick
+
+# Run GRPO short training (50 steps) with dual vLLM servers
+grpo-50:
+	chmod +x scripts/training/run_grpo_complete.sh
+	./scripts/training/run_grpo_complete.sh
 
 # Tiny multi-turn smoke: build one 2-step episode and construct env
 multiturn-smoke:

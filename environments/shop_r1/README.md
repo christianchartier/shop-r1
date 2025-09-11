@@ -35,6 +35,14 @@ Note on evaluation servers:
   - `pip install "vllm==0.10.1.1"` (or `vllm-cu121` on CUDA 12.x), then start the server as shown in docs/runpod.md.
   - The GRPO script installs and starts vLLM automatically; the improved eval script will prompt to install if missing.
 
+## Make Targets (For Reviewers)
+- `make setup`: Install the repo locally (uv) and pytest.
+- `make test-shop_r1`: Run offline smoke tests (no GPU/network).
+- `make eval-tiny`: Synthesize 20 examples and run paper metrics (requires model server if evaluating).
+- `make grpo-quick`: Run GRPO smoke (1 step) with dual vLLM servers (GPU 0/1).
+- `make grpo-50`: Run GRPO short training (50 steps) with dual vLLM servers.
+- `make multiturn-smoke`: Create a tiny 2‑step episode and construct MultiTurnEnv.
+
 ## Action JSON Schema
 Example outputs:
 ```

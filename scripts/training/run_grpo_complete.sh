@@ -40,8 +40,14 @@ source .venv/bin/activate
 
 # Check for vLLM installation
 if ! python -c "import vllm" 2>/dev/null; then
-    echo "Installing vLLM and wandb..."
-    pip install "vllm==0.10.1.1" wandb
+    echo "Installing vLLM..."
+    pip install "vllm==0.10.1.1" || pip install vllm
+fi
+
+# Ensure wandb is installed regardless of vLLM presence
+if ! python -c "import wandb" 2>/dev/null; then
+    echo "Installing wandb..."
+    pip install wandb
 fi
 
 # Step 2: Dataset Creation

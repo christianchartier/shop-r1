@@ -38,6 +38,9 @@ echo -e "${BLUE}Step 1: Setting up environment...${NC}"
 cd /workspace/shop-r1
 source .venv/bin/activate
 
+# Disable Weights & Biases login unless explicitly enabled
+export WANDB_DISABLED=${WANDB_DISABLED:-true}
+
 # Check for vLLM installation
 if ! python -c "import vllm" 2>/dev/null; then
     echo "Installing vLLM..."

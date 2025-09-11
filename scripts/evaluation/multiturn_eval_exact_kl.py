@@ -23,9 +23,27 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import torch
-import os
+import os, sys, types
 # Avoid importing torchvision in transformers (prevents nms/op issues on pods)
 os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
+# Additionally, stub torchvision so any accidental import succeeds without ops
+if "torchvision" not in sys.modules:
+    tv = types.ModuleType("torchvision")
+    sys.modules["torchvision"] = tv
+    # minimal submodules commonly touched by Transformers
+    transforms = types.ModuleType("torchvision.transforms")
+    class _InterpolationMode:
+        NEAREST = 0
+        BILINEAR = 2
+        BICUBIC = 3
+        LANCZOS = 1
+        HAMMING = 4
+        BOX = 5
+    transforms.InterpolationMode = _InterpolationMode
+    sys.modules["torchvision.transforms"] = transforms
+    sys.modules["torchvision.models"] = types.ModuleType("torchvision.models")
+    sys.modules["torchvision.ops"] = types.ModuleType("torchvision.ops")
+
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 import sys

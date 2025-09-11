@@ -1,4 +1,4 @@
-.PHONY: setup test-shop-r1 eval-tiny runpod grpo-quick grpo-50 multiturn-smoke multiturn-eval
+.PHONY: setup test-shop-r1 eval-tiny runpod grpo-quick grpo-50 multiturn-smoke multiturn-eval episodes-from-single multiturn-rl-skeleton multiturn-eval-exact
 
 setup:
 	uv pip install -e .
@@ -38,3 +38,11 @@ multiturn-eval:
 episodes-from-single:
 	@mkdir -p data
 	uv run python scripts/evaluation/build_episodes_from_singleturn.py --input data/test.jsonl --output data/episodes.jsonl --steps 3 --mode chunk --include-history
+
+# Minimal multi‑turn RL skeleton (no weight updates)
+multiturn-rl-skeleton:
+	uv run python scripts/training/multiturn_rl_skeleton.py --dataset data/episodes.jsonl --max_episodes 5 --model_alias local-qwen --whole_session --strict --output results/evaluation/multiturn_rl_skeleton.json
+
+# Multi‑turn evaluation using HF (exact per‑token probabilities)
+multiturn-eval-exact:
+	uv run python scripts/evaluation/multiturn_eval_exact_kl.py --dataset data/episodes.jsonl --max_episodes 10 --model_id Qwen/Qwen2.5-0.5B-Instruct --device cuda --whole_session --output results/evaluation/multiturn_eval_exact.json

@@ -1,34 +1,31 @@
 #!/usr/bin/env python3
 """
-Multi‑turn evaluation: iterates episodes with steps, queries a model per step,
-parses action JSON, and computes paper metrics across all steps.
+Multi‑turn evaluation using Transformers (HF) with full per‑token probability
+vectors (exact softmax). Computes the same paper metrics (per‑step aggregate)
+as the other evaluator, but generates locally via HF instead of an OpenAI API.
 
-Input dataset: JSONL with one episode per line:
-  {"steps": [ {"prompt": [... or str], "answer": {type,name,text}}, ... ]}
-
-If "steps" is absent, each line is treated as a 1‑step episode with fields
-"prompt" and "answer".
+Usage example:
+  uv run python scripts/evaluation/multiturn_eval_exact_kl.py \
+    --dataset data/episodes.jsonl \
+    --max_episodes 10 \
+    --model_id Qwen/Qwen2.5-0.5B-Instruct \
+    --device cuda \
+    --whole_session \
+    --output results/evaluation/multiturn_eval_exact.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-from openai import OpenAI
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-
-# Make sure we can import local modules
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-
-from configs.endpoints import ENDPOINTS  # noqa: E402
-from scripts.eval_paper_metrics import PaperMetricsEvaluator  # noqa: E402
+from scripts.eval_paper_metrics import PaperMetricsEvaluator
 
 
 IMPROVED_INSTRUCTION = (
@@ -45,8 +42,8 @@ IMPROVED_INSTRUCTION = (
 def load_episodes(path: str, max_episodes: int = -1) -> List[Dict[str, Any]]:
     episodes: List[Dict[str, Any]] = []
     with open(path, "r", encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if max_episodes > 0 and len(episodes) >= max_episodes:
+        for line in f:
+            if 0 < max_episodes <= len(episodes):
                 break
             line = line.strip()
             if not line:
@@ -67,13 +64,10 @@ def extract_prompt_text(step: Dict[str, Any]) -> str:
     p = step.get("prompt")
     if isinstance(p, str):
         return p
-    if isinstance(p, list) and p:
-        # use first user message content
+    if isinstance(p, list):
         for msg in p:
-            if isinstance(msg, dict) and msg.get("role") == "user":
-                c = msg.get("content")
-                if isinstance(c, str):
-                    return c
+            if isinstance(msg, dict) and msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                return msg["content"]
     return ""
 
 
@@ -91,8 +85,7 @@ def build_history_summary(steps: List[Dict[str, Any]], upto_idx: int) -> str:
         if t == "click":
             parts.append(f"click({name})" if name else "click(…)")
         elif t == "type_and_submit":
-            n = name or "…"
-            x = text or "…"
+            n, x = name or "…", text or "…"
             parts.append(f"type_and_submit({n}='{x}')")
         elif t == "terminate":
             parts.append("terminate()")
@@ -102,21 +95,17 @@ def build_history_summary(steps: List[Dict[str, Any]], upto_idx: int) -> str:
 
 
 def parse_action_from_output(text: str) -> Dict[str, Any] | None:
-    # Find a JSON object in the text
     matches = re.findall(r"\{[\s\S]*?\}", text)
     for m in matches:
         try:
             obj = json.loads(m)
         except Exception:
             continue
-        # Accept nested { rationale, action: {type,name,text} }
         if isinstance(obj, dict) and "action" in obj and isinstance(obj["action"], dict):
             act = obj["action"]
-            # Fill missing fields
             act.setdefault("name", "")
             act.setdefault("text", "")
             return act
-        # Or flattened { rationale, type, name, text }
         if isinstance(obj, dict) and "type" in obj:
             obj.setdefault("name", "")
             obj.setdefault("text", "")
@@ -125,40 +114,36 @@ def parse_action_from_output(text: str) -> Dict[str, Any] | None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Multi‑turn evaluation for Shop‑R1 episodes")
-    ap.add_argument("--dataset", required=True, help="Path to episodes JSONL")
-    ap.add_argument("--max_episodes", type=int, default=-1, help="Max episodes to evaluate")
-    ap.add_argument("--model_alias", default="local-qwen", help="Endpoint alias (configs/endpoints.py)")
-    ap.add_argument("--temperature", type=float, default=0.1)
+    ap = argparse.ArgumentParser(description="Multi‑turn eval with HF exact per‑token probabilities")
+    ap.add_argument("--dataset", required=True, help="Episodes JSONL (or single‑turn JSONL)")
+    ap.add_argument("--max_episodes", type=int, default=10)
+    ap.add_argument("--model_id", default="Qwen/Qwen2.5-0.5B-Instruct")
+    ap.add_argument("--device", default="cuda")
+    ap.add_argument("--temperature", type=float, default=0.6)
+    ap.add_argument("--whole_session", action="store_true")
+    ap.add_argument("--include_prev_html", action="store_true")
+    ap.add_argument("--html_max_chars", type=int, default=2000)
     ap.add_argument("--sim_threshold", type=float, default=0.75)
-    ap.add_argument("--whole_session", action="store_true", help="Prepend compact history summary of previous steps to each prompt")
-    ap.add_argument("--include_prev_html", action="store_true", help="Also prepend previous user HTML contexts (trimmed)")
-    ap.add_argument("--html_max_chars", type=int, default=2000, help="Max characters of previous HTML to prepend")
-    ap.add_argument("--output", default="results/evaluation/multiturn_eval.json")
-
+    ap.add_argument("--output", default="results/evaluation/multiturn_eval_exact.json")
     args = ap.parse_args()
 
-    # Load episodes
+    device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
+    tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
+    mdl = AutoModelForCausalLM.from_pretrained(args.model_id, torch_dtype="auto", trust_remote_code=True).to(device).eval()
+    if tok.pad_token is None and tok.eos_token is not None:
+        tok.pad_token = tok.eos_token
+
     episodes = load_episodes(args.dataset, args.max_episodes)
     if not episodes:
         print("No episodes found.")
         return 1
 
-    # Endpoint selection
-    if args.model_alias not in ENDPOINTS:
-        print(f"Unknown model alias '{args.model_alias}'. Available: {', '.join(ENDPOINTS.keys())}")
-        return 2
-    ep = ENDPOINTS[args.model_alias]
-    client = OpenAI(api_key=os.getenv(ep["key"], "EMPTY"), base_url=ep["url"]) 
-    model = ep["model"]
-
     evaluator = PaperMetricsEvaluator(sim_threshold=args.sim_threshold)
-
     truths: List[Dict[str, Any]] = []
     preds: List[Dict[str, Any]] = []
 
     total_steps = 0
-    for epi_idx, epi in enumerate(episodes):
+    for epi in episodes:
         steps = epi.get("steps", [])
         for t, step in enumerate(steps):
             total_steps += 1
@@ -167,39 +152,47 @@ def main() -> int:
                 hist = build_history_summary(steps, t)
                 if hist:
                     prompt_text = (prompt_text.rstrip() + "\n" + hist) if prompt_text else hist
-            if args.include_prev_html:
-                prev: List[str] = []
+            if args.include_prev_html and t > 0:
+                prev_htmls: List[str] = []
                 for s in steps[:t]:
                     p = s.get("prompt")
                     if isinstance(p, list):
                         for msg in p:
                             if isinstance(msg, dict) and msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                                prev.append(msg["content"]) 
+                                prev_htmls.append(msg["content"]) 
                     elif isinstance(p, str):
-                        prev.append(p)
-                if prev:
-                    blob = "\n\n".join(prev)
+                        prev_htmls.append(p)
+                if prev_htmls:
+                    blob = "\n\n".join(prev_htmls)
                     if len(blob) > args.html_max_chars:
                         blob = blob[-args.html_max_chars:]
-                    prev_html = "Previous contexts (truncated):\n" + blob
-                    prompt_text = (prompt_text.rstrip() + "\n\n" + prev_html) if prompt_text else prev_html
-            # Build improved prompt
-            user_prompt = f"{IMPROVED_INSTRUCTION}\n\n{prompt_text}\n\nJSON Action:"
-            try:
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": user_prompt}],
-                    temperature=args.temperature,
-                    max_tokens=160,
-                    response_format={"type": "json_object"},
-                )
-                output = resp.choices[0].message.content or ""
-            except Exception as e:
-                print(f"[warn] episode {epi_idx} step {t}: request failed: {e}")
-                output = ""
+                    prompt_text = (prompt_text.rstrip() + "\n\nPrevious contexts (truncated):\n" + blob) if prompt_text else blob
 
-            pred_action = parse_action_from_output(output) or {}
-            # Ground truth action
+            user_prompt = f"{IMPROVED_INSTRUCTION}\n\n{prompt_text}\n\nJSON Action:"
+            enc = tok(user_prompt, return_tensors="pt").to(device)
+            with torch.no_grad():
+                out = mdl.generate(
+                    **enc,
+                    do_sample=True,
+                    temperature=args.temperature,
+                    max_new_tokens=160,
+                    return_dict_in_generate=True,
+                    output_scores=True,
+                )
+            # Compute per‑token full probabilities (softmax)
+            probs_per_token: List[List[float]] = []
+            for logits in out.scores:  # each tensor shape [1, vocab]
+                p = torch.softmax(logits[0], dim=-1)
+                # To avoid enormous JSON, we do not store these; but they are computed here.
+                # If needed, one could compute exact‑KL now.
+                # probs_per_token.append(p.tolist())
+                pass
+            # Decode completion and parse action
+            gen_ids = out.sequences[0][enc.input_ids.size(1):]
+            text = tok.decode(gen_ids, skip_special_tokens=True)
+            pred = parse_action_from_output(text) or {}
+            preds.append(pred)
+
             gt = step.get("answer")
             if isinstance(gt, str):
                 try:
@@ -209,25 +202,22 @@ def main() -> int:
             if not isinstance(gt, dict):
                 gt = {}
             truths.append(gt)
-            preds.append(pred_action)
 
     metrics = evaluator.compute_metrics(truths, preds)
-    print("\n=== MULTI‑TURN EVALUATION (per‑step aggregate) ===")
+    print("\n=== MULTI‑TURN EVALUATION (HF exact) ===")
     print(f"Episodes: {len(episodes)}  Steps: {total_steps}")
     print(f"Exact Action Accuracy:  {metrics.exact_action_acc:.2%}")
     print(f"Action Type Accuracy:   {metrics.action_type_acc:.2%}")
     print(f"Action Type F1 (Macro): {metrics.action_type_f1:.2%}")
 
-    # Save JSON
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    payload: Dict[str, Any] = metrics.to_dict()
-    payload.update({"episodes": len(episodes), "total_steps": total_steps})
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+        json.dump(metrics.to_dict() | {"episodes": len(episodes), "total_steps": total_steps}, f, ensure_ascii=False, indent=2)
     print(f"Saved results to: {out_path}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -436,6 +436,10 @@ class ShopR1Config:
 
     # Self‑certainty parameters
     enable_self_certainty: bool = True
+    # If True, attempt exact KL(p||Uniform) using full token distributions when available
+    sc_exact_kl: bool = True
+    # Optional vocab size hint for exact KL normalization; if None, infer from vector length
+    sc_vocab_size_hint: Optional[int] = None
     sc_calib_center: float = -2.5
     sc_calib_scale: float = 1.0
     sc_clip_min: float = 0.0
@@ -719,6 +723,62 @@ def _norm_certainty_from_topk(per_token_topk: List[List[float]]) -> float:
 def _self_certainty_score(cfg: ShopR1Config, **kwargs) -> float:
     if not cfg.enable_self_certainty:
         return 0.0
+    # Try exact KL if configured and full distributions are available
+    if cfg.sc_exact_kl:
+        # Look for per-token full probability vectors
+        def _extract_full_probs(**kw) -> Optional[List[List[float]]]:
+            # Common direct placements
+            for key in ("full_token_probs", "full_probs", "full_token_distributions"):
+                val = kw.get(key)
+                if isinstance(val, list) and val and all(isinstance(x, list) for x in val):
+                    return val  # type: ignore
+            # Nested containers (state/task)
+            for container_key in ("state", "task"):
+                cont = kw.get(container_key)
+                if isinstance(cont, dict):
+                    for key in ("full_token_probs", "full_probs", "full_token_distributions"):
+                        val = cont.get(key)
+                        if isinstance(val, list) and val and all(isinstance(x, list) for x in val):
+                            return val  # type: ignore
+                    # Some providers may stash under completion.logprobs.content[*].probs
+                    comp = cont.get("completion")
+                    if isinstance(comp, dict):
+                        ch = comp.get("choices")
+                        if isinstance(ch, list) and ch:
+                            lp = ch[0].get("logprobs")
+                            if isinstance(lp, dict):
+                                content = lp.get("content") or lp.get("tokens")
+                                if isinstance(content, list) and content:
+                                    seq: List[List[float]] = []
+                                    for tok in content:
+                                        if isinstance(tok, dict) and isinstance(tok.get("probs"), list):
+                                            probs = tok.get("probs")
+                                            if all(isinstance(p, (int, float)) for p in probs):
+                                                seq.append([float(p) for p in probs])
+                                    if seq:
+                                        return seq
+            return None
+
+        full = _extract_full_probs(**kwargs)
+        if full:
+            vals: List[float] = []
+            for probs in full:
+                if not isinstance(probs, list) or not probs:
+                    continue
+                Z = sum(float(max(0.0, p)) for p in probs) or 1.0
+                p = [max(1e-12, float(pp) / Z) for pp in probs]
+                V = float(cfg.sc_vocab_size_hint or len(p) or 1)
+                # KL(p||U) = sum_i p_i * log(p_i * V)
+                kl = sum(pi * math.log(pi * V) for pi in p)
+                # Normalize to [0,1] by dividing by log(V)
+                denom = math.log(V) if V > 1 else 1.0
+                c = kl / denom if denom > 0 else 0.0
+                # Clip to [0,1]
+                c = min(1.0, max(0.0, c))
+                vals.append(c)
+            if vals:
+                s = sum(vals) / len(vals)
+                return float(min(cfg.sc_clip_max, max(cfg.sc_clip_min, s)))
     tk = _extract_topk_logprobs_from_kwargs(**kwargs)
     if tk:
         c = _norm_certainty_from_topk(tk)
@@ -800,6 +860,8 @@ def load_environment(**kwargs) -> SingleTurnEnv:
         dars_weight_value_len=float(kwargs.get("dars_weight_value_len", 0.3)),
         dars_factor=float(kwargs.get("dars_factor", 1000.0)),
         enable_self_certainty=bool(kwargs.get("enable_self_certainty", True)),
+        sc_exact_kl=bool(kwargs.get("sc_exact_kl", True)),
+        sc_vocab_size_hint=int(kwargs.get("sc_vocab_size_hint", 0)) or None,
         sc_calib_center=float(kwargs.get("sc_calib_center", -2.5)),
         sc_calib_scale=float(kwargs.get("sc_calib_scale", 1.0)),
         sc_clip_min=float(kwargs.get("sc_clip_min", 0.0)),

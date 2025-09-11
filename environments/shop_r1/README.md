@@ -42,6 +42,7 @@ Note on evaluation servers:
 - `make grpo-quick`: Run GRPO smoke (1 step) with dual vLLM servers (GPU 0/1).
 - `make grpo-50`: Run GRPO short training (50 steps) with dual vLLM servers.
 - `make multiturn-smoke`: Create a tiny 2‑step episode and construct MultiTurnEnv.
+- `make multiturn-eval`: Evaluate a small episodes file (requires running vLLM at configs/endpoints alias, e.g., local-qwen).
 
 ## Action JSON Schema
 Example outputs:

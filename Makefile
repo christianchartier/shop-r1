@@ -1,4 +1,4 @@
-.PHONY: setup test-shop-r1 eval-tiny runpod grpo-quick grpo-50 multiturn-smoke
+.PHONY: setup test-shop-r1 eval-tiny runpod grpo-quick grpo-50 multiturn-smoke multiturn-eval
 
 setup:
 	uv pip install -e .
@@ -29,3 +29,7 @@ multiturn-smoke:
 	@mkdir -p data
 	@printf '{"steps":[{"prompt":[{"role":"user","content":"context t1"}],"answer":{"type":"type_and_submit","name":"search_input","text":"laptop"}},{"prompt":[{"role":"user","content":"context t2"}],"answer":{"type":"click","name":"view_details"}}]}' > data/episodes.jsonl
 	uv run python -c "from environments.shop_r1.shop_r1 import load_multiturn_environment as load; env=load(dataset_path='data/episodes.jsonl', max_episodes=1, strict=True); ds=getattr(env,'dataset',[]); funcs=getattr(getattr(env,'rubric',None),'funcs',[]); print('episodes:', len(ds)); print('rubric_funcs:', len(funcs)); print('multiturn smoke: OK')" 
+
+# Run multi-turn evaluation over episodes.jsonl (uses local vLLM server via configs/endpoints.py)
+multiturn-eval:
+	uv run python scripts/evaluation/multiturn_eval.py --dataset data/episodes.jsonl --max_episodes 10 --model_alias local-qwen --output results/evaluation/multiturn_eval.json

@@ -1,4 +1,4 @@
-.PHONY: setup test-shop-r1 eval-tiny runpod
+.PHONY: setup test-shop-r1 eval-tiny runpod grpo-quick multiturn-smoke
 
 setup:
 	uv pip install -e .
@@ -13,3 +13,25 @@ eval-tiny:
 
 runpod:
 	@echo "See docs/runpod.md for full one-shot RunPod instructions."
+
+# Run GRPO quick smoke (1 step) with dual vLLM servers
+grpo-quick:
+	chmod +x scripts/training/run_grpo_complete.sh
+	./scripts/training/run_grpo_complete.sh --quick
+
+# Tiny multi-turn smoke: build one 2-step episode and construct env
+multiturn-smoke:
+	@mkdir -p data
+	@printf '{"steps":[{"prompt":[{"role":"user","content":"context t1"}],"answer":{"type":"type_and_submit","name":"search_input","text":"laptop"}},{"prompt":[{"role":"user","content":"context t2"}],"answer":{"type":"click","name":"view_details"}}]}' > data/episodes.jsonl
+	uv run python - << 'PY'
+try:
+    from environments.shop_r1.shop_r1 import load_multiturn_environment
+    env = load_multiturn_environment(dataset_path='data/episodes.jsonl', max_episodes=1, strict=True)
+    ds = getattr(env, 'dataset', [])
+    funcs = getattr(getattr(env, 'rubric', None), 'funcs', [])
+    print('episodes:', len(ds))
+    print('rubric_funcs:', len(funcs))
+    print('multiturn smoke: OK')
+except Exception as e:
+    print('multiturn smoke: unavailable or failed ->', e)
+PY

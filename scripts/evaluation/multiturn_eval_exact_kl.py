@@ -23,6 +23,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import torch
+import os
+# Avoid importing torchvision in transformers (prevents nms/op issues on pods)
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 import sys

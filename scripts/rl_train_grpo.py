@@ -188,6 +188,23 @@ def main():
     except Exception:
         pass
 
+    # Guard against vLLM API variations: some versions may not expose
+    # 'num_background_tasks' in the expected endpoint. Fall back to 0.
+    try:
+        import verifiers.inference.vllm_client as _vclient  # type: ignore
+        _orig_get_num_bg = getattr(_vclient.VLLMClient, "get_num_background_tasks", None)
+
+        if callable(_orig_get_num_bg):
+            def _safe_get_num_background_tasks(self):  # type: ignore
+                try:
+                    return _orig_get_num_bg(self)
+                except Exception:
+                    return 0
+
+            _vclient.VLLMClient.get_num_background_tasks = _safe_get_num_background_tasks  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
     # Create separate OpenAI client for generation (port 8001)
     # The TRL communicator stays on port 8000 for /get_world_size and /init_communicator
     # This prevents 404 errors when env sends generation requests

@@ -23,15 +23,17 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import torch
-import os, sys, types
+import os, sys, types, importlib.machinery as _ilm
 # Avoid importing torchvision in transformers (prevents nms/op issues on pods)
 os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 # Additionally, stub torchvision so any accidental import succeeds without ops
 if "torchvision" not in sys.modules:
     tv = types.ModuleType("torchvision")
+    tv.__spec__ = _ilm.ModuleSpec("torchvision", loader=None)
     sys.modules["torchvision"] = tv
     # minimal submodules commonly touched by Transformers
     transforms = types.ModuleType("torchvision.transforms")
+    transforms.__spec__ = _ilm.ModuleSpec("torchvision.transforms", loader=None)
     class _InterpolationMode:
         NEAREST = 0
         BILINEAR = 2
@@ -41,8 +43,12 @@ if "torchvision" not in sys.modules:
         BOX = 5
     transforms.InterpolationMode = _InterpolationMode
     sys.modules["torchvision.transforms"] = transforms
-    sys.modules["torchvision.models"] = types.ModuleType("torchvision.models")
-    sys.modules["torchvision.ops"] = types.ModuleType("torchvision.ops")
+    models = types.ModuleType("torchvision.models")
+    models.__spec__ = _ilm.ModuleSpec("torchvision.models", loader=None)
+    sys.modules["torchvision.models"] = models
+    ops = types.ModuleType("torchvision.ops")
+    ops.__spec__ = _ilm.ModuleSpec("torchvision.ops", loader=None)
+    sys.modules["torchvision.ops"] = ops
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 

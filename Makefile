@@ -23,15 +23,4 @@ grpo-quick:
 multiturn-smoke:
 	@mkdir -p data
 	@printf '{"steps":[{"prompt":[{"role":"user","content":"context t1"}],"answer":{"type":"type_and_submit","name":"search_input","text":"laptop"}},{"prompt":[{"role":"user","content":"context t2"}],"answer":{"type":"click","name":"view_details"}}]}' > data/episodes.jsonl
-	uv run python - << 'PY'
-try:
-    from environments.shop_r1.shop_r1 import load_multiturn_environment
-    env = load_multiturn_environment(dataset_path='data/episodes.jsonl', max_episodes=1, strict=True)
-    ds = getattr(env, 'dataset', [])
-    funcs = getattr(getattr(env, 'rubric', None), 'funcs', [])
-    print('episodes:', len(ds))
-    print('rubric_funcs:', len(funcs))
-    print('multiturn smoke: OK')
-except Exception as e:
-    print('multiturn smoke: unavailable or failed ->', e)
-PY
+	uv run python -c "from environments.shop_r1.shop_r1 import load_multiturn_environment as load; env=load(dataset_path='data/episodes.jsonl', max_episodes=1, strict=True); ds=getattr(env,'dataset',[]); funcs=getattr(getattr(env,'rubric',None),'funcs',[]); print('episodes:', len(ds)); print('rubric_funcs:', len(funcs)); print('multiturn smoke: OK')" 

@@ -25,6 +25,13 @@ from typing import Any, Dict, List
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+import sys
+from pathlib import Path
+
+# Ensure repo root on path for scripts.* imports
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
 from scripts.eval_paper_metrics import PaperMetricsEvaluator
 
 
@@ -220,4 +227,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

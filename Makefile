@@ -32,4 +32,9 @@ multiturn-smoke:
 
 # Run multi-turn evaluation over episodes.jsonl (uses local vLLM server via configs/endpoints.py)
 multiturn-eval:
-	uv run python scripts/evaluation/multiturn_eval.py --dataset data/episodes.jsonl --max_episodes 10 --model_alias local-qwen --output results/evaluation/multiturn_eval.json
+	uv run python scripts/evaluation/multiturn_eval.py --dataset data/episodes.jsonl --max_episodes 10 --model_alias local-qwen --whole_session --output results/evaluation/multiturn_eval.json
+
+# Build episodes.jsonl from a single-turn file (default: data/test.jsonl)
+episodes-from-single:
+	@mkdir -p data
+	uv run python scripts/evaluation/build_episodes_from_singleturn.py --input data/test.jsonl --output data/episodes.jsonl --steps 3 --mode chunk --include-history

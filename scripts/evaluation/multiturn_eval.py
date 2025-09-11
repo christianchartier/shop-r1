@@ -77,6 +77,30 @@ def extract_prompt_text(step: Dict[str, Any]) -> str:
     return ""
 
 
+def build_history_summary(steps: List[Dict[str, Any]], upto_idx: int) -> str:
+    if upto_idx <= 0:
+        return ""
+    parts: List[str] = []
+    for s in steps[:upto_idx]:
+        a = s.get("answer") or {}
+        if not isinstance(a, dict):
+            continue
+        t = str(a.get("type", "")).lower()
+        name = a.get("name") or ""
+        text = a.get("text") or a.get("value") or ""
+        if t == "click":
+            parts.append(f"click({name})" if name else "click(…)")
+        elif t == "type_and_submit":
+            n = name or "…"
+            x = text or "…"
+            parts.append(f"type_and_submit({n}='{x}')")
+        elif t == "terminate":
+            parts.append("terminate()")
+        elif t:
+            parts.append(t)
+    return ("Previous actions: " + ", ".join(parts) + ".") if parts else ""
+
+
 def parse_action_from_output(text: str) -> Dict[str, Any] | None:
     # Find a JSON object in the text
     matches = re.findall(r"\{[\s\S]*?\}", text)
@@ -107,6 +131,7 @@ def main() -> int:
     ap.add_argument("--model_alias", default="local-qwen", help="Endpoint alias (configs/endpoints.py)")
     ap.add_argument("--temperature", type=float, default=0.1)
     ap.add_argument("--sim_threshold", type=float, default=0.75)
+    ap.add_argument("--whole_session", action="store_true", help="Prepend compact history summary of previous steps to each prompt")
     ap.add_argument("--output", default="results/evaluation/multiturn_eval.json")
 
     args = ap.parse_args()
@@ -136,6 +161,10 @@ def main() -> int:
         for t, step in enumerate(steps):
             total_steps += 1
             prompt_text = extract_prompt_text(step)
+            if args.whole_session:
+                hist = build_history_summary(steps, t)
+                if hist:
+                    prompt_text = (prompt_text.rstrip() + "\n" + hist) if prompt_text else hist
             # Build improved prompt
             user_prompt = f"{IMPROVED_INSTRUCTION}\n\n{prompt_text}\n\nJSON Action:"
             try:
@@ -184,4 +213,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -43,6 +43,7 @@ Note on evaluation servers:
 - `make grpo-50`: Run GRPO short training (50 steps) with dual vLLM servers.
 - `make multiturn-smoke`: Create a tiny 2‑step episode and construct MultiTurnEnv.
 - `make multiturn-eval`: Evaluate a small episodes file (requires running vLLM at configs/endpoints alias, e.g., local-qwen).
+- `make episodes-from-single`: Build `data/episodes.jsonl` from `data/test.jsonl` (3‑step episodes with history prepended).
 
 ## Action JSON Schema
 Example outputs:

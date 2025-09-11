@@ -73,6 +73,11 @@ def main():
     # GRPO Trainer hyperparameters (vLLM server must be running)
     tr_args = vf.grpo_defaults(run_name="shop-r1-grpo")
     tr_args.output_dir = args.output_dir
+    # Avoid W&B by default; use report_to="none" to prevent integration
+    try:
+        tr_args.report_to = "none"  # type: ignore[attr-defined]
+    except Exception:
+        pass
     tr_args.learning_rate = args.learning_rate
     tr_args.max_steps = args.max_steps
     tr_args.per_device_train_batch_size = args.per_device_batch_size
